@@ -498,11 +498,43 @@ export class GameScene extends Phaser.Scene {
       realmName: this.realmSystem.getDisplayName(),
       cards,
       onSelect: (upgrade: Upgrade) => {
+        // 参悟新术但法位已满 → 转交替换面板,不直接学会
+        if (upgrade.type === 'newSpell' && this.weaponSystem.getWeaponCount() >= this.realmSystem.getSpellSlots()) {
+          const newId = upgrade.id.replace('newSpell_', '');
+          upgrade.apply(ctx);          // 满槽时 apply 是空操作
+          this.scene.stop('UpgradeScene');
+          this.openReplaceSpell(newId);
+          return;
+        }
         upgrade.apply(ctx);
         this.events.emit(GameEvents.UPGRADE_APPLIED, upgrade);
         this.scene.stop('UpgradeScene');
         this.resumeGame();
         // 选完卡之后,若之前攒下的修为已够再升一级,立刻补上
+        this.processPendingLevelUps();
+      },
+    });
+  }
+
+  /**
+   * 打开法术替换面板。
+   * @param newId 要参悟的新法术 id
+   */
+  private openReplaceSpell(newId: string): void {
+    this.scene.launch('ReplaceSpellScene', {
+      newSpellId: newId,
+      onReplace: (dropId: string | null) => {
+        // dropId 为 null = 玩家放弃,新法术离去,已有法术原样保留
+        if (dropId) {
+          this.weaponSystem.replaceWeapon(dropId, newId);
+        }
+        this.scene.stop('ReplaceSpellScene');
+        this.events.emit(GameEvents.UPGRADE_APPLIED, {
+          id: `replace_${newId}`, type: 'newSpell',
+          name: newId, description: '', iconColor: 0xffffff,
+          apply: () => {},
+        });
+        this.resumeGame();
         this.processPendingLevelUps();
       },
     });
@@ -565,23 +597,31 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // 2. 参悟新术 —— 新池优先,旧池降级;槽位未满时才出现
+    // 2. 参悟新术 —— 新池优先,旧池降级
+    //    槽位已满时依然出现,选中后进入替换面板让玩家舍弃一门旧法术
     const has = (id: string) => this.weaponSystem.hasWeapon(id);
     const attainable = getAttainableSpells(this.realmSystem.current.id, has);
-    if (this.weaponSystem.getWeaponCount() < slots && attainable.length > 0) {
+    if (attainable.length > 0) {
       const pick = attainable[Math.floor(Math.random() * attainable.length)];
-      // 来自当前境界还是降级的旧池,卡面要说清楚
       const fromCurrent = pick.realmId === this.realmSystem.current.id;
       const realmName = REALMS.find((r) => r.id === pick.realmId)?.name ?? '';
+      const slotsFull = this.weaponSystem.getWeaponCount() >= slots;
       out.push({
         id: `newSpell_${pick.id}`,
         type: 'newSpell',
         name: `参悟 ${pick.name}`,
-        description: fromCurrent
-          ? `${realmName}法术,领悟后威力远超旧术`
-          : `旧法重修(${realmName}),威力已逊于当前境界`,
+        description: slotsFull
+          ? '法位已满,需舍弃一门旧法方能参悟'
+          : fromCurrent
+            ? `${realmName}法术,领悟后威力远超旧术`
+            : `旧法重修(${realmName}),威力已逊于当前境界`,
         iconColor: pick.color,
-        apply: (c: UpgradeContext) => { c.weaponSystem.addWeapon(pick.id); },
+        // 槽位已满时不在这里直接学会,由 handleLevelUp 转交替换面板
+        apply: (c: UpgradeContext) => {
+          if (c.weaponSystem.getWeaponCount() < slots) {
+            c.weaponSystem.addWeapon(pick.id);
+          }
+        },
       });
     }
 

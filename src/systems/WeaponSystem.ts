@@ -94,6 +94,25 @@ export class WeaponSystem {
     return this.weapons.some((w) => w.id === id);
   }
 
+  /**
+   * 用 newId 替换掉 dropId。
+   *
+   * 新法术的等级按「首次学会」处理,即 Lv1 —— 替换不是升级,
+   * 玩家想变强仍然得靠后续的「法术精进」卡。
+   *
+   * @returns 是否替换成功
+   */
+  replaceWeapon(dropId: string, newId: string): boolean {
+    const idx = this.weapons.findIndex((w) => w.id === dropId);
+    if (idx < 0) return false;
+    // 已经在手上就不替换(替换成同名法术没有意义)
+    if (this.hasWeapon(newId)) return false;
+
+    this.weapons.splice(idx, 1);
+    this.addWeapon(newId);
+    return true;
+  }
+
   resetCooldowns(): void {
     this.weapons.forEach((w) => { w.lastFiredAt = -9999; });
   }

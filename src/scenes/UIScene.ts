@@ -192,6 +192,16 @@ export class UIScene extends Phaser.Scene {
     const game = this.scene.get('GameScene') as any;
     if (!game?.weaponSystem) return;
     const weapons = game.weaponSystem.getWeapons();
+    const cap = game.realmSystem?.getSpellSlots?.() ?? weapons.length;
+
+    // 法位标题 —— 让玩家随时知道还剩几个空位
+    this.weaponPanel.add([
+      this.add.text(4, -4, `法位 ${weapons.length}/${cap}`, {
+        fontFamily: 'monospace', fontSize: '12px',
+        color: weapons.length >= cap ? '#ff9966' : '#8899bb',
+      }),
+    ]);
+
     weapons.forEach((w: any, i: number) => {
       const cfg = WEAPONS[w.id];
       const x = i * 70;
