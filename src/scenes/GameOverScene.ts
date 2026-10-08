@@ -9,7 +9,7 @@ export class GameOverScene extends Phaser.Scene {
   private level = 1;
   private newRecordTime = false;
   private newRecordKills = false;
-  private realmName = '炼气期·初期';
+  private realmName = '凝气期·一层';
   private artifacts: string[] = [];
 
   constructor() {
@@ -20,7 +20,7 @@ export class GameOverScene extends Phaser.Scene {
     this.surviveTime = data.time || 0;
     this.kills = data.kills || 0;
     this.level = data.level || 1;
-    this.realmName = data.realmName || '炼气期·初期';
+    this.realmName = data.realmName || '凝气期·一层';
     this.artifacts = (data.artifacts ?? []) as string[];
     this.newRecordTime = !!data.newRecordTime;
     this.newRecordKills = !!data.newRecordKills;

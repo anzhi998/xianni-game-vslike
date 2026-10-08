@@ -3,6 +3,10 @@ import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { Projectile } from '../entities/Projectile';
 import { Pickup } from '../entities/Pickup';
+import { Slam } from '../entities/attacks/Slam';
+import { ArcSlash } from '../entities/attacks/ArcSlash';
+import { Orbiter } from '../entities/attacks/Orbiter';
+import { Zone } from '../entities/attacks/Zone';
 import { DamageText } from '../entities/DamageText';
 import { InputManager } from '../utils/InputManager';
 import { WeaponSystem } from '../systems/WeaponSystem';
@@ -29,6 +33,11 @@ export class GameScene extends Phaser.Scene {
   public projectilePool!: Phaser.GameObjects.Group;
   public xpPool!: Phaser.GameObjects.Group;
   public damageTextPool!: Phaser.GameObjects.Group;
+  // 非直射攻击形态的池
+  public slamPool!: Phaser.GameObjects.Group;
+  public arcPool!: Phaser.GameObjects.Group;
+  public orbiterPool!: Phaser.GameObjects.Group;
+  public zonePool!: Phaser.GameObjects.Group;
 
   // 系统
   public inputManager!: InputManager;
@@ -152,6 +161,16 @@ export class GameScene extends Phaser.Scene {
     this.xpPool = this.add.group({ runChildUpdate: true, classType: Pickup, maxSize: 160 });
     this.damageTextPool = this.add.group({ runChildUpdate: true, classType: DamageText, maxSize: 60 });
 
+    // 攻击形态各自的池。非直射形态不参与物理碰撞,数量需求远低于投射物。
+    //
+    // runChildUpdate: false —— 这些实体靠自己重写的 preUpdate 驱动(经 scene 的
+    // updateList),不靠 Group 调 update()。开着 runChildUpdate 只会让 Group
+    // 每帧对这些子对象做一次无意义的 slice + update() 调用。
+    this.slamPool = this.add.group({ runChildUpdate: false, classType: Slam, maxSize: 20 });
+    this.arcPool = this.add.group({ runChildUpdate: false, classType: ArcSlash, maxSize: 16 });
+    this.orbiterPool = this.add.group({ runChildUpdate: false, classType: Orbiter, maxSize: 24 });
+    this.zonePool = this.add.group({ runChildUpdate: false, classType: Zone, maxSize: 20 });
+
     // 预创建
     for (let i = 0; i < 80; i++) {
       this.createPooledEnemy();
@@ -164,6 +183,34 @@ export class GameScene extends Phaser.Scene {
     }
     for (let i = 0; i < 60; i++) {
       this.createPooledDamageText();
+    }
+
+    // 非直射形态需要敌人的引用与伤害回调,在建池时一次性注入
+    const apply = this.applyDamageToEnemy.bind(this);
+    for (let i = 0; i < 20; i++) {
+      const s = new Slam(this);
+      s.setActive(false).setVisible(false);
+      s.bind(this.enemyPool, apply);
+      this.slamPool.add(s);
+    }
+    for (let i = 0; i < 16; i++) {
+      const a = new ArcSlash(this);
+      a.setActive(false).setVisible(false);
+      a.bind(this.enemyPool, apply);
+      this.arcPool.add(a);
+    }
+    for (let i = 0; i < 24; i++) {
+      const o = new Orbiter(this);
+      o.setActive(false).setVisible(false);
+      // 传入玩家坐标的实时取值函数 —— 环绕体必须跟着玩家走
+      o.bind(this.enemyPool, apply, () => ({ x: this.player.x, y: this.player.y }));
+      this.orbiterPool.add(o);
+    }
+    for (let i = 0; i < 20; i++) {
+      const z = new Zone(this);
+      z.setActive(false).setVisible(false);
+      z.bind(this.enemyPool, apply);
+      this.zonePool.add(z);
     }
   }
 
@@ -216,6 +263,12 @@ export class GameScene extends Phaser.Scene {
       this.projectilePool,
       this.enemyPool,
       this.artifactSystem,
+      {
+        slams: this.slamPool,
+        arcs: this.arcPool,
+        orbiters: this.orbiterPool,
+        zones: this.zonePool,
+      },
     );
     this.weaponSystem.addWeapon(STARTING_WEAPON);
 
@@ -364,17 +417,31 @@ export class GameScene extends Phaser.Scene {
 
   private onProjectileHitEnemy(proj: Projectile, enemy: Enemy): void {
     if (!proj.active || proj.isDead) return;
-    if (!enemy.active || enemy.isDead) return;
     if (proj.hitSet.has(enemy)) return;
-    proj.hitSet.add(enemy);
 
-    const killed = enemy.takeDamage(proj.damage, this.time.now);
-    this.spawnDamageText(enemy.x, enemy.y - 8, Math.round(proj.damage), '#ffffff', false);
+    const applied = this.applyDamageToEnemy(enemy, proj.damage, enemy.x, enemy.y - 8);
+    // 敌人已死或本次未造成伤害时不必再走连锁/穿透
+    if (!applied) return;
+    proj.onHitEnemy();
+  }
 
+  /**
+   * 统一的伤害结算入口。
+   *
+   * 直射投射物、落印的落点判定、弧斩的扫掠、环绕体的接触、地效的跳伤 ——
+   * 五种来源全部走这里,避免伤害数字、击杀掉落、死亡补间各写一遍。
+   *
+   * @returns 是否实际造成了伤害(敌人已死 / 已失效时返回 false)
+   */
+  private applyDamageToEnemy(enemy: Enemy, amount: number, textX: number, textY: number): boolean {
+    if (!enemy.active || enemy.isDead) return false;
+
+    const killed = enemy.takeDamage(amount, this.time.now);
+    this.spawnDamageText(textX, textY, Math.round(amount), '#ffffff', false);
     if (killed) {
       this.onEnemyKilled(enemy);
     }
-    proj.onHitEnemy();
+    return true;
   }
 
   private onEnemyKilled(enemy: Enemy): void {

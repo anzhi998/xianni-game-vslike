@@ -74,11 +74,27 @@ export interface UpgradeContext {
 /**
  * 武器配置
  */
+/**
+ * 攻击形态
+ *
+ * 直射   projectile  从玩家射出,直线飞行,可被法宝改写(追踪/连锁/散射)
+ * 落印   slam        从目标头顶垂直砸落,落地时对落点周围造成范围伤害
+ * 弧斩   arc         以玩家为中心扫过一段圆弧,沿途命中
+ * 环绕   orbiter     持续存在并绕玩家公转,接触即伤害
+ * 地效   zone        在指定地点持续存在一段时间,周期性对范围内造成伤害
+ *
+ * 注意:法宝的「追踪/连锁/散射」只对直射生效 —— 那三者本质都是改写弹道,
+ * 落印/弧斩/环绕/地效没有弹道可改。其余数值类修饰(伤害/范围/冷却/存续)对所有形态生效。
+ */
+export type AttackForm = 'projectile' | 'slam' | 'arc' | 'orbiter' | 'zone';
+
 export interface WeaponConfig {
   id: string;
   name: string;
   /** 所属大境界 id。决定「参悟新术」卡从哪个池子里抽 */
   realmId: string;
+  /** 攻击形态。非直射的形态由各自的实体类实现 */
+  form: AttackForm;
   /** 投射物纹理键(AssetGenerator 生成) */
   texture: string;
   damage: number;
@@ -89,7 +105,33 @@ export interface WeaponConfig {
   area: number;
   duration: number;
   color: number;
+
+  // ---- 形态专属参数(仅对应 form 生效)----
+  /** slam: 落点半径(像素) */
+  slamRadius?: number;
+  /** slam: 起始高度(像素),决定下砸的视觉落差 */
+  slamHeight?: number;
+  /** arc: 挥斩半径(像素) */
+  arcRadius?: number;
+  /** arc: 扫过的角度(弧度) */
+  arcSpan?: number;
+  /** orbiter: 环绕半径(像素) */
+  orbitRadius?: number;
+  /** orbiter: 公转角速度(弧度/秒) */
+  orbitSpeed?: number;
+  /** zone: 持续区域半径(像素) */
+  zoneRadius?: number;
+  /** zone: 每次跳伤间隔(毫秒) */
+  zoneTickMs?: number;
 }
+
+/** 敌人受到伤害的回调。由 GameScene 注入,统一处理伤害数字与击杀掉落 */
+export type DamageApplier = (
+  enemy: import('../entities/Enemy').Enemy,
+  amount: number,
+  textX: number,
+  textY: number,
+) => void;
 
 /**
  * 法宝对开火行为的修饰集合

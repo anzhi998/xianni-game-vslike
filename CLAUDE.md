@@ -55,7 +55,26 @@ Key conventions:
 - **Artifacts do not occupy spell slots**, and re-picking an owned one raises its tier rather than opening a swap UI. That single choice is why v1 needs no inventory/discard screen.
 - **Chain lightning redirects the projectile in place**, it does not fork a new one — forking would require injecting the projectile pool into the projectile, multiply concurrent projectiles against the pool's sizing, and make `hitSet` bookkeeping two-sided.
 - **Chain + homing compose for free**: the redirect sets `nextRetargetAt = 0`, so equipping both 引魂铃 and 万血幡 makes each chain hop home to its new target with no special-casing.
-- **Orbiting artifacts are explicitly out of scope** — `Projectile` is a fire-and-forget `bornAt`/`lifeMs` model and cannot host a persistent orbiter.
+- **Trait modifiers split into two classes:** ballistic (`spreadRad`/`homingTurn`/`chainCount`) apply **only to the `projectile` form** — those three all rewrite a trajectory, and slams/arcs/orbiters/zones have no trajectory. Numeric modifiers (`damageMul`/`areaMul`/`cooldownMul`/`lifeMul`) flow through `WeaponSystem.compose()` and apply to every form. A user equipping the spread artifact with a slam spell gets no benefit; that is intended.
+- **Orbiting *artifacts* remain out of scope**, but orbiting is now available as a spell *form* (`Orbiter`). The distinction matters: artifacts rewrite how an equipped spell fires, while orbiting is a way of casting — different concerns.
+
+### Attack forms
+
+`WeaponConfig.form` selects one of five forms, each with its own entity class in `src/entities/attacks/`:
+
+| form | entity | hit resolution |
+|---|---|---|
+| `projectile` | `Projectile` (physics sprite) | Arcade overlap |
+| `slam` | `Slam` (container) | one circular query on impact |
+| `arc` | `ArcSlash` (container) | one sector query mid-sweep |
+| `orbiter` | `Orbiter` (image) | proximity + cooldown throttle |
+| `zone` | `Zone` (container) | periodic circular queries |
+
+- **All five deal damage through `GameScene.applyDamageToEnemy`.** It is the single place that calls `enemy.takeDamage`, spawns the damage number, and triggers `onEnemyKilled`. Never call `enemy.takeDamage` directly from a new form.
+- **Non-projectile forms are non-physics.** They're pure `GameObject`s driven by their own `preUpdate`, which works because `scene.add.existing()` adds any object defining `preUpdate` to the scene's update list (`GameObjectFactory.js:140`). Their pools use `runChildUpdate: false` — the `Group` calling `update()` would be pure overhead since these classes deliberately have no `update()`.
+- **Their pool sizes equal their prewarm counts** so `Group.get()` can never construct an un-`bind()`ed instance. If you raise `maxSize`, raise the prewarm loop in the same edit, or a fired slam will crash on undefined `enemyGroup`.
+- **`Orbiter` reads the player position through a `getPivot()` callback injected at `bind()` time**, not a captured coordinate. Capturing `player.x/y` in `setup()` looks correct and silently strands every orb behind a moving player — the whole point of the form is that it travels with you. `GameScene` supplies `() => ({ x: this.player.x, y: this.player.y })`.
+- **Names that collide with Phaser base classes got renamed, not fought.** `originX`/`originY` → `pivotX`/`pivotY` (on `Container`/`Image`), `angle` → `orbitAngle` (on `Image`), `body` → `seal` (on `Container`, which reserves `body` for physics).
 
 ### Elites and drops
 

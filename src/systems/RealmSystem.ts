@@ -14,7 +14,7 @@ import type { MajorRealmDef } from '../config/RealmConfig';
 import { GameEvents } from '../types';
 
 export class RealmSystem {
-  /** REALMS 的下标,0 = 炼气期 */
+  /** REALMS 的下标,0 = 凝气期 */
   public majorIndex = 0;
   /** 当前大境界内的小境界层数,突破大境界时归零 */
   public minorLevel = 0;
@@ -62,7 +62,7 @@ export class RealmSystem {
   }
 
   getMinorName(): string {
-    // 每个大境界有自己的层数命名(炼气是「一层~十层」,其余是「初期~圆满」)
+    // 每个大境界有自己的层数命名(凝气是「一层~十五层」,其余是「初期~圆满」)
     const names = this.current.minorNames;
     return names[this.minorLevel] ?? '';
   }

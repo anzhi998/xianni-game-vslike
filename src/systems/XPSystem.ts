@@ -27,12 +27,14 @@ export class XPSystem {
   /**
    * 升到下一级所需的修为。
    *
-   * ⚠️ 这是全局最重要的调参数字。原来的 10 + level^1.5 * 5 曲线太陡,
-   * 12 分钟只能到 15 级,六个境界有五个是死内容。改成线性之后
-   * 元婴约 7 分钟、化神约 10 分钟、炼虚约 14 分钟。
+   * ⚠️ 这是全局最重要的调参数字。
+   *
+   * 系数 4 对应《仙逆》原著的七境界体系(凝气十五层 + 六境各五层):
+   * 凝气期约 4.5 分钟走完,满问鼎约 13.2 分钟。
+   * 换成七境界之前的六境时是 6,但那套境界更短,系数需要跟着调。
    */
   private computeXpToNext(level: number): number {
-    return Math.floor(12 + level * 6);
+    return Math.floor(12 + level * 4);
   }
 
   getXp(): number {

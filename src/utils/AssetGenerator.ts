@@ -304,7 +304,7 @@ function generateRealmProjectiles(scene: Phaser.Scene): void {
   blade('proj_chaos_bolt', 0x8866ff, 22, 9);
   orb('proj_heaven_candle', 0xffcc55, 18, 18);
 
-  // 炼虚
+  // 问鼎
   blade('proj_void_swap', 0xbb88ff, 20, 8);
   blade('proj_dao_seal', 0xffdd88, 22, 10);
   orb('proj_grand_collapse', 0xff3344, 20, 20);

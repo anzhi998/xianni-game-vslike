@@ -4,9 +4,14 @@ import { WEAPONS } from '../config/WeaponConfig';
 import type { Enemy } from '../entities/Enemy';
 import type { Projectile } from '../entities/Projectile';
 import type { ArtifactSystem } from './ArtifactSystem';
+import type { Slam } from '../entities/attacks/Slam';
+import type { ArcSlash } from '../entities/attacks/ArcSlash';
+import type { Orbiter } from '../entities/attacks/Orbiter';
+import type { Zone } from '../entities/attacks/Zone';
 import { findNearestEnemy } from '../utils/Targeting';
 import { MathUtils } from '../utils/MathUtils';
 import { GameEvents } from '../types';
+import type { WeaponConfig, FireModifiers } from '../types';
 
 export interface WeaponInstance {
   id: string;
@@ -43,6 +48,10 @@ export class WeaponSystem {
   private player: Player;
   private weapons: WeaponInstance[] = [];
   private projectiles: Phaser.GameObjects.Group;
+  private slams: Phaser.GameObjects.Group;
+  private arcs: Phaser.GameObjects.Group;
+  private orbiters: Phaser.GameObjects.Group;
+  private zones: Phaser.GameObjects.Group;
   private enemyGroup: Phaser.GameObjects.Group;
   private artifactSystem: ArtifactSystem;
 
@@ -52,12 +61,22 @@ export class WeaponSystem {
     projectilesGroup: Phaser.GameObjects.Group,
     enemyGroup: Phaser.GameObjects.Group,
     artifactSystem: ArtifactSystem,
+    attackPools: {
+      slams: Phaser.GameObjects.Group;
+      arcs: Phaser.GameObjects.Group;
+      orbiters: Phaser.GameObjects.Group;
+      zones: Phaser.GameObjects.Group;
+    },
   ) {
     this.scene = scene;
     this.player = player;
     this.projectiles = projectilesGroup;
     this.enemyGroup = enemyGroup;
     this.artifactSystem = artifactSystem;
+    this.slams = attackPools.slams;
+    this.arcs = attackPools.arcs;
+    this.orbiters = attackPools.orbiters;
+    this.zones = attackPools.zones;
   }
 
   addWeapon(id: string): void {
@@ -120,42 +139,77 @@ export class WeaponSystem {
   update(time: number, _delta: number): void {
     const artifactCooldownMul = this.artifactSystem.getModifiers().cooldownMul;
     for (const w of this.weapons) {
+      const cfg = WEAPONS[w.id];
+      if (!cfg) continue;
       const cd = w.baseCooldown * this.player.cooldownMul * artifactCooldownMul;
-      if (time - w.lastFiredAt >= cd) {
-        const target = this.findTarget();
-        if (target) {
-          this.fire(w, target);
-          w.lastFiredAt = time;
-        }
+      if (time - w.lastFiredAt < cd) continue;
+
+      // 环绕体自行公转,不需要索敌 —— 有敌人没敌人都照常施放
+      if (cfg.form === 'orbiter') {
+        this.fireOrbiter(w, cfg);
+        w.lastFiredAt = time;
+        continue;
       }
+
+      const target = this.findTarget(cfg);
+      if (!target) continue;
+      this.fire(w, cfg, target);
+      w.lastFiredAt = time;
     }
   }
 
-  private findTarget(): Enemy | null {
-    return findNearestEnemy(this.enemyGroup, this.player.x, this.player.y, 600 * this.player.areaMul);
+  /**
+   * 索敌半径。
+   * 非直射形态的「射程」概念不同:落印/地效是丢在目标头上,弧斩以玩家为圆心扫一圈,
+   * 所以它们用各自的实际作用半径去索敌,而不是直射那套 600px。
+   */
+  private findTarget(cfg: WeaponConfig): Enemy | null {
+    const range = cfg.form === 'arc'
+      ? (cfg.arcRadius ?? 150) * this.player.areaMul
+      : cfg.form === 'slam'
+        ? 600
+        : 600 * this.player.areaMul;
+    return findNearestEnemy(this.enemyGroup, this.player.x, this.player.y, range);
+  }
+
+  /** 三个来源合成一次:法术基础值 × 精进倍率 × Player 修正 × 法宝修正 */
+  private compose(w: WeaponInstance, m: FireModifiers) {
+    const levelMul = Math.pow(WeaponSystem.LEVEL_DAMAGE_MUL, w.level - 1);
+    return {
+      damage: w.baseDamage * levelMul * this.player.damageMul * m.damageMul,
+      speed: w.baseSpeed * this.player.projectileSpeedMul * m.projectileSpeedMul,
+      pierce: w.basePierce + this.player.pierceAdd + m.pierceAdd,
+      area: w.baseArea * this.player.areaMul * m.areaMul,
+      lifeMs: w.duration * m.lifeMul,
+    };
   }
 
   /**
-   * 三个来源合成一次:法术基础值 × Player 修正 × 法宝修正。
-   * 循环内不做任何法宝分支 —— 修饰已经在 ArtifactSystem.merge() 里合完了。
+   * 按形态分发。
+   *
+   * 注意法宝的弹道类修饰(追踪/连锁/散射)只对直射生效 ——
+   * 那三者本质都是改写弹道,落印/弧斩/环绕/地效没有弹道可改。
+   * 数值类修饰(伤害/范围/冷却/存续)通过 compose() 对所有形态生效。
    */
-  private fire(w: WeaponInstance, target: Enemy): void {
+  private fire(w: WeaponInstance, cfg: WeaponConfig, target: Enemy): void {
+    switch (cfg.form) {
+      case 'slam':    this.fireSlam(w, cfg, target); break;
+      case 'arc':     this.fireArc(w, cfg, target); break;
+      case 'zone':    this.fireZone(w, cfg, target); break;
+      default:        this.fireProjectile(w, cfg, target); break;
+    }
+    this.scene.events.emit(GameEvents.WEAPON_FIRED, w.id);
+  }
+
+  /** 直射 —— 唯一可被法宝改写弹道的形态(纹理由 Projectile 依 weaponId 自查) */
+  private fireProjectile(w: WeaponInstance, _cfg: WeaponConfig, target: Enemy): void {
     const m = this.artifactSystem.getModifiers();
+    const { damage, speed, pierce, area, lifeMs } = this.compose(w, m);
     const baseAngle = MathUtils.angle(this.player.x, this.player.y, target.x, target.y);
 
     const count = Math.max(1, w.baseCount + this.player.projectileAdd + m.projectileAdd);
-    // 法宝指定了张角就用法宝的,否则沿用默认
     const spread = m.spreadRad > 0 ? m.spreadRad : (count > 1 ? WeaponSystem.DEFAULT_SPREAD : 0);
     const startOffset = -((count - 1) * spread) / 2;
-
-    // 提到循环外 —— 原来每颗投射物都重算一遍这几个值,纯属浪费
-    const speed = w.baseSpeed * this.player.projectileSpeedMul * m.projectileSpeedMul;
-    // 法术精进只乘在这一项上,与 Player 全局修正、法宝修正三者相乘
-    const levelMul = Math.pow(WeaponSystem.LEVEL_DAMAGE_MUL, w.level - 1);
-    const damage = w.baseDamage * levelMul * this.player.damageMul * m.damageMul;
-    const pierce = w.basePierce + this.player.pierceAdd + m.pierceAdd;
-    const area = w.baseArea * this.player.areaMul * m.areaMul;
-    const lifeMs = w.duration * m.lifeMul;
 
     for (let i = 0; i < count; i++) {
       const angle = baseAngle + startOffset + i * spread;
@@ -168,6 +222,77 @@ export class WeaponSystem {
         angle, damage, speed, pierce, w.id, area, lifeMs, m,
       );
     }
-    this.scene.events.emit(GameEvents.WEAPON_FIRED, w.id);
+  }
+
+  /** 落印 —— 从目标头顶垂直砸落,落地时范围伤害 */
+  private fireSlam(w: WeaponInstance, cfg: WeaponConfig, target: Enemy): void {
+    const m = this.artifactSystem.getModifiers();
+    const { damage, area } = this.compose(w, m);
+    // 弹数不加 m.projectileAdd —— 散射属弹道类修饰,对落印无效(见文档 2.2)
+    const count = Math.max(1, w.baseCount);
+    const radius = (cfg.slamRadius ?? 70) * area;
+    const height = cfg.slamHeight ?? 280;
+
+    for (let i = 0; i < count; i++) {
+      // 多发时绕目标散开,避免全部叠在同一点
+      const a = count > 1 ? (i / count) * Math.PI * 2 : 0;
+      const off = count > 1 ? radius * 0.5 : 0;
+      const slam = this.slams.get() as Slam;
+      if (!slam) continue;
+      slam.setup(
+        target.x + Math.cos(a) * off,
+        target.y + Math.sin(a) * off,
+        damage, cfg.slamRadius ?? 70,
+        height + i * 40, 220 + height * 0.4, area, cfg.texture,
+      );
+    }
+  }
+
+  /** 弧斩 —— 以玩家为中心扫过一段弧 */
+  private fireArc(w: WeaponInstance, cfg: WeaponConfig, target: Enemy): void {
+    const m = this.artifactSystem.getModifiers();
+    const { damage, area } = this.compose(w, m);
+    const facing = MathUtils.angle(this.player.x, this.player.y, target.x, target.y);
+
+    const arc = this.arcs.get() as ArcSlash;
+    if (!arc) return;
+    arc.setup(
+      this.player.x, this.player.y, facing,
+      damage, cfg.arcRadius ?? 150, cfg.arcSpan ?? Math.PI / 3,
+      240, area,
+    );
+  }
+
+  /** 地效 —— 在目标处留下持续伤害区域 */
+  private fireZone(w: WeaponInstance, cfg: WeaponConfig, target: Enemy): void {
+    const m = this.artifactSystem.getModifiers();
+    const { damage, area, lifeMs } = this.compose(w, m);
+
+    const zone = this.zones.get() as Zone;
+    if (!zone) return;
+    zone.setup(
+      target.x, target.y, damage,
+      cfg.zoneRadius ?? 80, lifeMs, cfg.zoneTickMs ?? 500,
+      area, cfg.color,
+    );
+  }
+
+  /** 环绕 —— 绕玩家公转的护卫体,多发时均匀分布 */
+  private fireOrbiter(w: WeaponInstance, cfg: WeaponConfig): void {
+    const m = this.artifactSystem.getModifiers();
+    const { damage, area, lifeMs } = this.compose(w, m);
+    // 同上:环绕数量不随散射法宝增加
+    const count = Math.max(1, w.baseCount);
+
+    for (let i = 0; i < count; i++) {
+      const orb = this.orbiters.get() as Orbiter;
+      if (!orb) continue;
+      orb.setup(
+        (i / count) * Math.PI * 2,
+        damage,
+        cfg.orbitRadius ?? 70, cfg.orbitSpeed ?? 2,
+        lifeMs, area, cfg.texture,
+      );
+    }
   }
 }

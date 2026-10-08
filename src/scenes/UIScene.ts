@@ -60,7 +60,7 @@ export class UIScene extends Phaser.Scene {
       .setDepth(UIScene.DEPTH_HUD);
 
     // 境界名(取代裸等级)。卡在大境界道具门槛上时会变为橙色提示所需道具
-    this.realmText = this.add.text(xpX + xpW + 8, xpY + 26, '炼气期·初期', {
+    this.realmText = this.add.text(xpX + xpW + 8, xpY + 26, '凝气期·一层', {
       fontFamily: 'monospace', fontSize: '14px', color: '#aaffff',
     }).setOrigin(0, 0.5).setDepth(UIScene.DEPTH_HUD);
 
