@@ -1,0 +1,20 @@
+{
+  "name": "xianni",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Vampire Survivors-like roguelike survival game built with Phaser 3",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11"
+  }
+}
