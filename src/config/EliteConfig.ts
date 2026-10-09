@@ -1,14 +1,23 @@
-import { NORMAL_MUTATION } from '../types';
-import type { DropEntry, EnemyMutation } from '../types';
 import { ARTIFACT_IDS } from './ArtifactConfig';
+import { EVOLUTIONS } from './EvolutionConfig';
 import { REALMS } from './RealmConfig';
+import { NORMAL_MUTATION } from '../types';
+import type { DropEntry, EnemyMutation, EnemyResist } from '../types';
 
 /**
- * 精英怪与掉落
+ * 精英怪与掉落 ——「精英 · 同阶修士」(怪物设计文档第五节)
  *
- * 精英按「时间间隔」而非「固定概率」掷出。
- * 固定概率会与 WaveConfig 里 spawnInterval 从 1.0s 压到 0.24s 的曲线打架,
- * 导致屏幕最挤的时候精英反而更密 —— 和设计意图正好相反。
+ * 文档对它的定义只有三条,但三条都很硬:
+ *   1. 血量 ×30 于同段普通怪,必掉一个秘境宝匣
+ *   2. 不随玩家远离而消失 —— 会直接传回屏幕上(见 EnemyAiSystem 的传回逻辑)
+ *   3. 最多带两条抗性,绝不三抗齐全
+ *
+ * 它是整局资源链的入口:**没有精英,就没有宝匣,就没有进化**。
+ * 所以宝匣从「低概率掉落」改成了「必掉」—— 旧的 2.4%~6% 掷骰让宝匣
+ * 变成运气,而设计书里它是节奏点,不该靠运气。
+ *
+ * 精英仍然按「时间间隔」而非「固定概率」掷出:固定概率会与段表的
+ * spawnInterval 曲线打架,导致屏幕最挤的时候精英反而更密。
  */
 
 /** 开局时多少秒出一只精英 */
@@ -18,8 +27,14 @@ export const ELITE_PERIOD_END = 7;
 /** 精英密度线性增长到多少秒为止 */
 const RAMP_END_SECONDS = 720;
 
-/** 各档精英的血量倍率 */
-const TIER_HP = [0, 4, 8, 15];
+/** 精英对同段普通怪的倍率(文档:血量 ×30) */
+const ELITE_HP_MUL = 30;
+/** 接触伤害倍率。文档没写,取 3 —— 让「别被它碰到」成立,又不至于一碰秒杀 */
+const ELITE_DAMAGE_MUL = 3;
+/** 体型倍率。同阶修士比同段杂兵大一圈,混战里一眼可辨 */
+const ELITE_SCALE_MUL = 1.6;
+/** 修为倍率 */
+const ELITE_XP_MUL = 8;
 
 export function elitePeriodAt(seconds: number): number {
   const t = Math.min(1, seconds / RAMP_END_SECONDS);
@@ -27,61 +42,191 @@ export function elitePeriodAt(seconds: number): number {
 }
 
 /**
+ * 同时存在的精英上限。
+ *
+ * ×30 血 + 不 despawn + 必掉宝匣,三条加起来意味着「玩家打不动」时精英会
+ * 无限累积成一堵墙。这条上限不是装饰,是那三条规则的保险丝。
+ */
+export const MAX_LIVE_ELITES = 2;
+
+/**
  * 掷出本次生成是否为精英。
  * @param spawnInterval 当前出怪间隔,用于换算成「期望每 N 只出一只」
  */
-export function rollEliteMutation(seconds: number, spawnInterval: number): EnemyMutation {
+export function rollEliteMutation(
+  seconds: number,
+  spawnInterval: number,
+  baseResist: EnemyResist = {},
+): EnemyMutation {
   if (Math.random() >= spawnInterval / elitePeriodAt(seconds)) {
     return NORMAL_MUTATION;
   }
-  const roll = Math.random();
-  const tier = roll < 0.6 ? 1 : roll < 0.9 ? 2 : 3;
-  const k = TIER_HP[tier];
+  return makeEliteMutation(baseResist);
+}
+
+/** 无条件造一只精英(调试键用,也用于把「是否为精英」与「精英长什么样」分开) */
+export function makeEliteMutation(baseResist: EnemyResist = {}): EnemyMutation {
   return {
     elite: true,
-    tier,
-    hpMul: k,
-    damageMul: 1 + (k - 1) * 0.15,
-    speedMul: 1 + (tier - 1) * 0.08,
-    xpMul: 2 + tier * 2,
-    scaleMul: 1.25 + tier * 0.22,
+    tier: 1,
+    hpMul: ELITE_HP_MUL,
+    damageMul: ELITE_DAMAGE_MUL,
+    // 精英是同阶修士,不靠速度吓人 —— 跑得比杂兵快会让「跑掉」这条退路失效
+    speedMul: 1,
+    xpMul: ELITE_XP_MUL,
+    scaleMul: ELITE_SCALE_MUL,
+    resist: rollEliteResists(baseResist),
   };
 }
 
-/** 掉落物数量缩放 */
-function dropCount(tier: number, chance: number): number {
-  let n = 0;
-  for (let i = 0; i < tier; i++) {
-    if (Math.random() < chance) n++;
-  }
-  return n;
+/** 抗性键的顺序(掷骰与计数共用,别在两处各写一份) */
+const RESIST_KEYS: (keyof EnemyResist)[] = ['pull', 'freeze', 'instakill'];
+
+function resistCount(r: EnemyResist): number {
+  return RESIST_KEYS.reduce((n, k) => n + (r[k] ? 1 : 0), 0);
 }
+
+/**
+ * 掷出精英的抗性。
+ *
+ * 文档的硬约束:**最多两条,绝不三抗齐全**。三抗齐全 = 控制流彻底失效,
+ * 玩家只剩堆伤害一条路,十四类覆盖几何等于白设计。
+ *
+ * 从基础抗性(base)出发再补 —— 而不是掷一份覆盖它:铁甲兽天生免疫牵引,
+ * 那只抗性写在它的数据里,不能因为精英掷骰没抽到牵引就丢掉。
+ * 补的总数(基础 + 掷骰)封顶两条,所以「天生一条的坦克」最多再补一条。
+ *
+ * 即死抗性目前没有对应机制(梦道在阶段 4),但它仍会出现在数据里 ——
+ * 让「抗性表」从第一天起就是同一张,比事后补一条更好。
+ */
+export function rollEliteResists(base: EnemyResist = {}): EnemyResist {
+  const out: EnemyResist = { ...base };
+  const target = Math.min(2, Math.random() < 0.55 ? 1 : 2);
+  const pool = RESIST_KEYS.filter((k) => !out[k]);
+  while (resistCount(out) < target && pool.length > 0) {
+    const idx = Math.floor(Math.random() * pool.length);
+    out[pool.splice(idx, 1)[0]] = true;
+  }
+  return out;
+}
+
+// ===== 丹药 =====
+
+/** 精英掉回血丹药的概率 */
+export const HEAL_PILL_CHANCE = 0.45;
+/** 精英掉加修为丹药的概率 */
+export const XP_PILL_CHANCE = 0.40;
+
+/**
+ * 回血丹药回复的气血 = 最大气血 × 此比例。
+ *
+ * 用比例而非固定值,因为最大气血会随大境界突破乘算增长 ——
+ * 固定值到后期会变得毫无意义。
+ */
+export const HEAL_PILL_FRACTION = 0.25;
+
+/**
+ * 加修为丹药给予的修为 = 当前一级所需 × 此比例。
+ * 同样按比例,保证任何境界捡到都有意义(与突破道具重复时的转化率一致)。
+ */
+export const XP_PILL_FRACTION = 0.35;
+
+/**
+ * 该法宝是否为某门神通的进化钥匙。
+ * 判定从 EVOLUTIONS 反查,而不是在法宝表里手写 isKey 字段 ——
+ * 配对表是唯一事实来源,两处各维护一份必然会走偏。
+ */
+function isEvolutionKey(id: string): boolean {
+  return EVOLUTIONS.some((e) => e.keys.includes(id));
+}
+
+/** 还缺的钥匙的权重 */
+const KEY_WEIGHT = 3;
+
+/** 没拿过的普通法宝的权重 */
+const MISSING_WEIGHT = 2;
 
 /**
  * 掷出这具精英尸体的掉落。
  *
- * 突破道具对「玩家当前正要突破的那个」加权 3 倍 ——
- * 避免大境界门槛退化成纯粹刷量,但不取消 hunt 的感觉。
+ * 秘境宝匣必掉 —— 但注意 10:00 之前不落地,由 GameScene 在生成掉落时把关。
+ * 突破道具对「玩家当前正要突破的那个」加权 3 倍 —— 避免大境界门槛退化成纯粹刷量,
+ * 但不取消 hunt 的感觉。
  *
  * 不做「已满阶法宝过滤」:法宝槽满 / 已满阶时 equip() 会返回 null,
  * GameScene 会在拾取时把溢出转化为突破道具,掉落因此永不浪费。
  */
-export function rollEliteDrops(tier: number, currentRealmIndex: number): DropEntry[] {
+export function rollEliteDrops(
+  currentRealmIndex: number,
+  ownedArtifacts: string[] = [],
+): DropEntry[] {
   const out: DropEntry[] = [];
 
-  const n = dropCount(tier, 0.55 + tier * 0.12);
-  for (let i = 0; i < n; i++) {
-    const id = pickNeededKeyItem(currentRealmIndex);
-    if (id) out.push({ kind: 'keyItem', payload: id });
+  // 必掉宝匣。它是全局唯一的进化跳档,由精英独占这个供给
+  out.push({ kind: 'chest', payload: 0 });
+
+  // 突破道具:保底一个,另有 60% 概率再掉一个
+  const id = pickNeededKeyItem(currentRealmIndex);
+  if (id) out.push({ kind: 'keyItem', payload: id });
+  if (Math.random() < 0.6) {
+    const id2 = pickNeededKeyItem(currentRealmIndex);
+    if (id2) out.push({ kind: 'keyItem', payload: id2 });
   }
 
-  const m = dropCount(tier, 0.18 + tier * 0.1);
-  for (let i = 0; i < m; i++) {
-    const id = ARTIFACT_IDS[Math.floor(Math.random() * ARTIFACT_IDS.length)];
-    out.push({ kind: 'artifact', payload: id });
+  // 法宝
+  if (Math.random() < 0.3) {
+    out.push({ kind: 'artifact', payload: pickArtifact(ownedArtifacts) });
+  }
+
+  // 丹药是消耗品,各只掷一次
+  if (Math.random() < HEAL_PILL_CHANCE) {
+    out.push({ kind: 'heal', payload: 0 });
+  }
+  if (Math.random() < XP_PILL_CHANCE) {
+    out.push({ kind: 'xpPill', payload: 0 });
   }
 
   return out;
+}
+
+/**
+ * 随机挑一件法宝掉落。
+ *
+ * 三档权重,理由分别是:
+ *   KEY_WEIGHT(3) —— 还缺的钥匙。没拿齐钥匙就永远凑不齐进化的三条件,
+ *                    而当前法术池里配了钥匙的法宝只有灵液·天逆一件,
+ *                    均匀随机的期望命中时间长得离谱。
+ *   MISSING_WEIGHT(2) —— 没拿过的普通法宝。法宝栏 6 格要填满 + 5 级要养,
+ *                    新的法宝总是有稀释重复值的价值。
+ *   权重 1 —— 已经持有的(重复拾取 = 升一级),仍然有效但不该占掉前两档的名额。
+ */
+function pickArtifact(owned: string[]): string {
+  const missingKey: string[] = [];
+  const missing: string[] = [];
+  const ownedList: string[] = [];
+
+  for (const id of ARTIFACT_IDS) {
+    if (!owned.includes(id)) {
+      (isEvolutionKey(id) ? missingKey : missing).push(id);
+    } else {
+      ownedList.push(id);
+    }
+  }
+
+  // 全都拿到了就都算「已有」,均匀随即可
+  const pool: { id: string; w: number }[] = [
+    ...missingKey.map((id) => ({ id, w: KEY_WEIGHT })),
+    ...missing.map((id) => ({ id, w: MISSING_WEIGHT })),
+    ...ownedList.map((id) => ({ id, w: 1 })),
+  ];
+
+  const total = pool.reduce((s, p) => s + p.w, 0);
+  let r = Math.random() * total;
+  for (const p of pool) {
+    r -= p.w;
+    if (r <= 0) return p.id;
+  }
+  return pool[pool.length - 1].id;
 }
 
 /** 随机挑一个突破道具。正缺的那个权重 3 倍,其余留少量权重供玩家囤下一境的丹药 */

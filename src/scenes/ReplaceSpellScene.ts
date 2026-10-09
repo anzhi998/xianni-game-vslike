@@ -66,15 +66,51 @@ export class ReplaceSpellScene extends Phaser.Scene {
     this.createSkipCard(skipX, cy, cardW, cardH, incoming?.name ?? '新术');
   }
 
+  /**
+   * 把整张卡片做成可交互对象。
+   *
+   * 两个必须注意的点:
+   *   1. 背景矩形**必须加进容器**。只 setInteractive 却不 add 的话,
+   *      它会留在场景显示列表里、停在世界坐标 (0,0),而卡片上没有任何可点区域。
+   *   2. 容器的 hitArea 要显式给定。Container 默认尺寸是 0×0,
+   *      只 setInteractive() 会得到一个点不到的零面积区域。
+   */
+  private makeCardInteractive(
+    card: Phaser.GameObjects.Container,
+    bg: Phaser.GameObjects.Rectangle,
+    w: number,
+    h: number,
+    baseColor: number,
+    hoverColor: number,
+    onClick: () => void,
+  ): void {
+    card.setSize(w, h);
+    card.setInteractive(
+      new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h),
+      Phaser.Geom.Rectangle.Contains,
+    );
+    card.input!.cursor = 'pointer';
+
+    card.on('pointerover', () => {
+      bg.setFillStyle(hoverColor, 0.98);
+      card.setScale(1.04);
+    });
+    card.on('pointerout', () => {
+      bg.setFillStyle(baseColor, 0.95);
+      card.setScale(1);
+    });
+    card.on('pointerdown', onClick);
+  }
+
   /** 已掌握的法术 —— 标出当前等级与关键数值,让玩家有得比 */
   private createSpellCard(x: number, y: number, w: number, h: number, id: string, level: number): void {
     const cfg = WEAPONS[id];
     const card = this.add.container(x, y);
     const bg = this.add.rectangle(0, 0, w, h, 0x2a1a1a, 0.95)
-      .setStrokeStyle(3, 0xaa5533)
-      .setInteractive({ useHandCursor: true });
+      .setStrokeStyle(3, 0xaa5533);
 
     card.add([
+      bg,
       this.add.text(0, -78, '舍弃', {
         fontFamily: 'monospace', fontSize: '13px', color: '#cc8855',
       }).setOrigin(0.5),
@@ -92,10 +128,7 @@ export class ReplaceSpellScene extends Phaser.Scene {
       }).setOrigin(0.5),
     ]);
 
-    bg.on('pointerover', () => { bg.setFillStyle(0x4a2a1a, 0.98); card.setScale(1.04); });
-    bg.on('pointerout', () => { bg.setFillStyle(0x2a1a1a, 0.95); card.setScale(1); });
-    bg.on('pointerdown', () => this.confirm(id));
-
+    this.makeCardInteractive(card, bg, w, h, 0x2a1a1a, 0x4a2a1a, () => this.confirm(id));
     this.animateIn(card);
   }
 
@@ -103,10 +136,10 @@ export class ReplaceSpellScene extends Phaser.Scene {
   private createSkipCard(x: number, y: number, w: number, h: number, newName: string): void {
     const card = this.add.container(x, y);
     const bg = this.add.rectangle(0, 0, w, h, 0x1a1a2a, 0.95)
-      .setStrokeStyle(3, 0x556688)
-      .setInteractive({ useHandCursor: true });
+      .setStrokeStyle(3, 0x556688);
 
     card.add([
+      bg,
       this.add.text(0, -40, '放弃参悟', {
         fontFamily: 'monospace', fontSize: '18px', color: '#8899bb', fontStyle: 'bold',
       }).setOrigin(0.5),
@@ -118,10 +151,7 @@ export class ReplaceSpellScene extends Phaser.Scene {
       }).setOrigin(0.5),
     ]);
 
-    bg.on('pointerover', () => { bg.setFillStyle(0x2a3a5a, 0.98); card.setScale(1.04); });
-    bg.on('pointerout', () => { bg.setFillStyle(0x1a1a2a, 0.95); card.setScale(1); });
-    bg.on('pointerdown', () => this.confirm(null));
-
+    this.makeCardInteractive(card, bg, w, h, 0x1a1a2a, 0x2a3a5a, () => this.confirm(null));
     this.animateIn(card);
   }
 

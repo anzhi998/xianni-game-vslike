@@ -1,5 +1,6 @@
 import type { WeaponConfig } from '../types';
-import { REALMS } from './RealmConfig';
+import { SPELL_SLOTS, SPELL_SLOT_LAST } from './SpellSlotConfig';
+import { EVOLUTIONS } from './EvolutionConfig';
 
 /**
  * 法术表 —— 每个大境界有独立的法术池
@@ -21,188 +22,225 @@ import { REALMS } from './RealmConfig';
 
 export const WEAPONS: Record<string, WeaponConfig> = {
 
-  // ===== 凝气期(灵动,十五层) =====
-  knife: {
-    id: 'knife', name: '飞剑', realmId: 'ningqi', texture: 'proj_knife',
+  // ===== 设计书 v2.7 的神通(阶段 1 第一刀:火球术链路)=====
+
+  /**
+   * 火球术 —— 格 1 的默认装备位,开局自动装上,不进卡池。
+   *
+   * 普通弹道(直线飞行),不是抛物线。所以形态走 projectile 而非 slam,
+   * 也不设 geometry —— 它不占设计书 14 类几何里的任何一格,
+   * 定位是「什么都不决定的入门件」。
+   */
+  fireball: {
+    id: 'fireball', name: '火球术', realmId: 'ningqi', texture: 'proj_fireball',
     form: 'projectile',
-    damage: 10, cooldown: 700, projectileSpeed: 420,
-    projectileCount: 1, pierce: 0, area: 1, duration: 800,
-    color: 0xdddddd,
-  },
-  magic: {
-    id: 'magic', name: '灵气弹', realmId: 'ningqi', texture: 'proj_magic',
-    form: 'projectile',
-    damage: 18, cooldown: 1100, projectileSpeed: 360,
-    projectileCount: 1, pierce: 1, area: 1, duration: 1200,
-    color: 0xaa66ff,
-  },
-  axe: {
-    id: 'axe', name: '回旋斧', realmId: 'ningqi', texture: 'proj_axe',
-    form: 'projectile',
-    damage: 22, cooldown: 1400, projectileSpeed: 320,
-    projectileCount: 1, pierce: 3, area: 1.3, duration: 1800,
-    color: 0xff8844,
+    damage: 18, cooldown: 1100, projectileSpeed: 380,
+    projectileCount: 1, pierce: 0, area: 1, duration: 1000,
+    color: 0xff4422,
+    usesRituals: true,
   },
 
-  // ===== 筑基期 =====
-  sword_array: {
-    id: 'sword_array', name: '御剑诀', realmId: 'zhuji', texture: 'proj_sword_array',
-    form: 'projectile',
-    damage: 26, cooldown: 820, projectileSpeed: 480,
-    projectileCount: 2, pierce: 1, area: 1, duration: 900,
-    color: 0x88ddff,
-  },
-  frost_needle: {
-    id: 'frost_needle', name: '玄冰针', realmId: 'zhuji', texture: 'proj_frost_needle',
-    form: 'projectile',
-    damage: 34, cooldown: 1000, projectileSpeed: 520,
-    projectileCount: 1, pierce: 2, area: 1, duration: 1100,
-    color: 0xaaccff,
-  },
-  fire_wheel: {
-    id: 'fire_wheel', name: '火轮', realmId: 'zhuji', texture: 'proj_fire_wheel',
-    form: 'orbiter',
-    orbitRadius: 70, orbitSpeed: 2.4,
-    damage: 46, cooldown: 1350, projectileSpeed: 400,
-    projectileCount: 1, pierce: 1, area: 1.4, duration: 1600,
-    color: 0xff6633,
-  },
-
-  // ===== 结丹期 =====
-  golden_light: {
-    id: 'golden_light', name: '金光斩', realmId: 'jiedan', texture: 'proj_golden_light',
-    form: 'arc',
-    arcRadius: 150, arcSpan: Math.PI * 0.7,
-    damage: 58, cooldown: 900, projectileSpeed: 560,
-    projectileCount: 3, pierce: 1, area: 1, duration: 1000,
-    color: 0xffdd44,
-  },
-  demon_eye: {
-    id: 'demon_eye', name: '魔光瞳', realmId: 'jiedan', texture: 'proj_demon_eye',
-    form: 'zone',
-    zoneRadius: 80, zoneTickMs: 400,
-    damage: 72, cooldown: 1500, projectileSpeed: 440,
-    projectileCount: 1, pierce: 2, area: 1.2, duration: 1500,
-    color: 0xaa44ff,
-  },
-  earth_pillar: {
-    id: 'earth_pillar', name: '厚土印', realmId: 'jiedan', texture: 'proj_earth_pillar',
-    form: 'slam',
-    slamRadius: 75, slamHeight: 280,
-    damage: 96, cooldown: 1900, projectileSpeed: 340,
-    projectileCount: 1, pierce: 0, area: 2, duration: 2000,
-    color: 0xaa8855,
-  },
-
-  // ===== 元婴期 =====
-  baby_soul: {
-    id: 'baby_soul', name: '元婴吐纳', realmId: 'yuanying', texture: 'proj_baby_soul',
-    form: 'orbiter',
-    orbitRadius: 85, orbitSpeed: 1.8,
-    damage: 88, cooldown: 1050, projectileSpeed: 540,
-    projectileCount: 2, pierce: 2, area: 1.1, duration: 1200,
-    color: 0xff88dd,
-  },
-  void_edge: {
-    id: 'void_edge', name: '虚空刃', realmId: 'yuanying', texture: 'proj_void_edge',
-    form: 'projectile',
-    damage: 112, cooldown: 1300, projectileSpeed: 620,
-    projectileCount: 1, pierce: 3, area: 1, duration: 1300,
-    color: 0x6644ff,
-  },
-
-  // ===== 化神期 =====
-  sea_of_souls: {
-    id: 'sea_of_souls', name: '天地意境', realmId: 'huashen', texture: 'proj_sea_of_souls',
-    form: 'zone',
-    zoneRadius: 95, zoneTickMs: 380,
-    damage: 134, cooldown: 950, projectileSpeed: 580,
-    projectileCount: 3, pierce: 2, area: 1.2, duration: 1300,
-    color: 0xff5577,
-  },
-  chaos_bolt: {
-    id: 'chaos_bolt', name: '元神击', realmId: 'huashen', texture: 'proj_chaos_bolt',
-    form: 'projectile',
-    damage: 168, cooldown: 1400, projectileSpeed: 640,
-    projectileCount: 1, pierce: 4, area: 1, duration: 1400,
+  /**
+   * 引力术 —— 格 2 候选(LV5),向心聚拢几何。
+   *
+   * 零伤害。它的全部价值是把敌人拖到一点,好让火球术这类弹道覆盖。
+   * 设计书对它的判词是「它本身几乎不造成伤害——先聚拢,再让别的神通打」。
+   *
+   * ⚠️ 半径刻意压在 150:初版给了 240,在 1280×720 的视口里那几乎是半个屏幕,
+   * 加上 3.6 秒冷却 / 2.2 秒持续,实际效果是「开局全程挂着一个全屏紫圈」——
+   * 既看不见形状也剥夺了走位。收窄之后它才真正是一块「往这边打」的区域。
+   */
+  gravity: {
+    id: 'gravity', name: '引力术', realmId: 'ningqi', texture: 'proj_magic',
+    form: 'attractor', geometry: 'gravity',
+    damage: 0, cooldown: 4200, projectileSpeed: 0,
+    projectileCount: 1, pierce: 0, area: 1, duration: 1800,
     color: 0x8866ff,
+    usesRituals: true,
+    // attractorPull 是拉力速度(px/s),不是加速度 —— 详情见 Attractor.pull 的注释
+    zoneRadius: 150, attractorPull: 320, fieldLifeMs: 1800,
   },
 
-  // ===== 婴变期 =====
-  star_slash: {
-    id: 'star_slash', name: '意境化芒', realmId: 'yingbian', texture: 'proj_star_slash',
-    form: 'arc',
-    arcRadius: 170, arcSpan: Math.PI * 0.8,
-    damage: 150, cooldown: 1750, projectileSpeed: 460,
-    projectileCount: 1, pierce: 2, area: 1.5, duration: 1700,
-    color: 0xbb88ff,
+  /**
+   * 万剑禁幡 —— 格 2 候选(LV5),抽中权重最低。
+   * 环绕自身几何,是全局唯一的纯自保件(对应原版的「大蒜」)。
+   */
+  wanjian_banner: {
+    id: 'wanjian_banner', name: '万剑禁幡', realmId: 'ningqi', texture: 'proj_sword_array',
+    form: 'orbiter', geometry: 'orbit',
+    damage: 16, cooldown: 2600, projectileSpeed: 0,
+    projectileCount: 3, pierce: 0, area: 1, duration: 3000,
+    color: 0x88ddff,
+    usesRituals: true,
+    orbitRadius: 110, orbitSpeed: 2.4,
   },
-  void_swap: {
-    id: 'void_swap', name: '仙力催发', realmId: 'yingbian', texture: 'proj_void_swap',
+
+  /**
+   * 十方引力 —— 引力术的进化形态(钥匙:神识罗盘)。
+   * 「吸得住、留不住」→ 笼罩更远、拖得更狠、留得更久。
+   * ⚠️ 半径 200 是刻意压着的:见引力术那条注释,初版 240 在 1280×720 里
+   * 几乎是半个屏幕。进化给的是「更远」,不是「全屏」。
+   */
+  shifang_yinli: {
+    id: 'shifang_yinli', name: '十方引力', realmId: 'ningqi', texture: 'proj_magic',
+    form: 'attractor', geometry: 'gravity',
+    damage: 0, cooldown: 4000, projectileSpeed: 0,
+    projectileCount: 1, pierce: 0, area: 1, duration: 2400,
+    color: 0x9a77ff,
+    usesRituals: true,
+    zoneRadius: 200, attractorPull: 380, fieldLifeMs: 2400,
+  },
+
+  /**
+   * 禁天幡 —— 万剑禁幡的进化形态(钥匙:凝神香)。
+   * 「剑气散得太快」→ 剑气因神凝而久驻不散:更多、更久、更密。
+   */
+  jintian_fan: {
+    id: 'jintian_fan', name: '禁天幡', realmId: 'ningqi', texture: 'proj_sword_array',
+    form: 'orbiter', geometry: 'orbit',
+    damage: 20, cooldown: 2400, projectileSpeed: 0,
+    projectileCount: 5, pierce: 0, area: 1.1, duration: 4200,
+    color: 0xaaeaff,
+    usesRituals: true,
+    orbitRadius: 120, orbitSpeed: 2.8,
+  },
+
+  /**
+   * 黄泉寂灭指 —— 黄泉指的进化形态(钥匙:御剑符)。
+   * 「单发、慢」→ 一道指芒化成连绵不断的剑芒:三发齐出、贯穿更深。
+   * 单发伤害比黄泉指低,但乘上进化倍率与三发齐射,总量是另一个量级 ——
+   * 进化该改的是「形状」,不只是数字
+   */
+  huangquan_jiemie: {
+    id: 'huangquan_jiemie', name: '黄泉寂灭指', realmId: 'zhuji', texture: 'proj_huangquan',
+    form: 'projectile', geometry: 'line',
+    damage: 26, cooldown: 900, projectileSpeed: 660,
+    projectileCount: 3, pierce: 5, area: 1.05, duration: 900,
+    color: 0xdd88ff,
+    usesRituals: true,
+  },
+
+  /**
+   * 第三目 · 时光红芒 —— 第三目的进化形态(钥匙:神识罗盘,与引力术共用)。
+   * 「红芒只照一条线」→ 覆盖面成倍扩张:更宽、更久,依旧贯穿一切。
+   */
+  third_eye_time: {
+    id: 'third_eye_time', name: '第三目·时光红芒', realmId: 'zhuji', texture: 'proj_third_eye',
+    form: 'projectile', geometry: 'beam',
+    damage: 16, cooldown: 1400, projectileSpeed: 700,
+    projectileCount: 1, pierce: 99, area: 1.4, duration: 2600,
+    color: 0xff6688,
+    usesRituals: true,
+  },
+
+  /**
+   * 九幽火海 —— 火球术的进化形态,不可直接获取,只能由宝匣结算得到。
+   *
+   * 仍是直线弹道,但命中后炸开一片持续灼烧的火海(zone)。
+   * 这样「进化」在画面上是看得见的,而不只是一个数字变大。
+   */
+  nine_nether_fire: {
+    id: 'nine_nether_fire', name: '九幽火海', realmId: 'ningqi', texture: 'proj_nine_nether_fire',
     form: 'projectile',
-    damage: 168, cooldown: 900, projectileSpeed: 660,
-    projectileCount: 4, pierce: 2, area: 1.1, duration: 1200,
-    color: 0xbb88ff,
+    damage: 24, cooldown: 1000, projectileSpeed: 360,
+    projectileCount: 1, pierce: 2, area: 1.4, duration: 1000,
+    color: 0xff5522,
+    usesRituals: true,
+    // 命中处炸开的灼烧区 —— zoneRadius 是「会炸开火海」的开关本身
+    zoneRadius: 150, zoneTickMs: 500,
   },
 
-  // ===== 问鼎期 =====
-  heaven_candle: {
-    id: 'heaven_candle', name: '天烛灭世', realmId: 'wending', texture: 'proj_heaven_candle',
-    form: 'slam',
-    slamRadius: 110, slamHeight: 340,
-    damage: 230, cooldown: 2100, projectileSpeed: 380,
-    projectileCount: 1, pierce: 1, area: 1.8, duration: 2100,
-    color: 0xffcc55,
+  /**
+   * 黄泉指 —— 格 3 候选(LV16 筑基),朝向直线几何。
+   * 一条贯穿的指芒,决定玩家必须始终面对威胁最大的方向。
+   *
+   * ⚠️ 弹体贴图与 color 必须同源:它曾经用 proj_knife(一把带剑柄的白色飞剑),
+   * 一门指法长得像另一门法术,玩家没法从弹体判断自己面对的是什么。
+   */
+  huangquan_zhi: {
+    id: 'huangquan_zhi', name: '黄泉指', realmId: 'zhuji', texture: 'proj_huangquan',
+    form: 'projectile', geometry: 'line',
+    damage: 34, cooldown: 900, projectileSpeed: 620,
+    projectileCount: 1, pierce: 3, area: 1, duration: 900,
+    color: 0xcc44ff,
+    usesRituals: true,
   },
-  dao_seal: {
-    id: 'dao_seal', name: '问鼎之印', realmId: 'wending', texture: 'proj_dao_seal',
-    form: 'slam',
-    slamRadius: 95, slamHeight: 300,
-    damage: 240, cooldown: 1250, projectileSpeed: 700,
-    projectileCount: 2, pierce: 4, area: 1.2, duration: 1500,
-    color: 0xffdd88,
-  },
-  grand_collapse: {
-    id: 'grand_collapse', name: '大寂灭', realmId: 'wending', texture: 'proj_grand_collapse',
-    form: 'zone',
-    zoneRadius: 120, zoneTickMs: 500,
-    damage: 320, cooldown: 1800, projectileSpeed: 480,
-    projectileCount: 1, pierce: 3, area: 1.6, duration: 2000,
-    color: 0xff3344,
-  },
-}
 
-export const STARTING_WEAPON = 'knife';
+  /**
+   * 第三目 · 神目 —— 格 3 候选(LV16 筑基),朝向光柱几何。
+   * 一道持续压在精英身上的红色光柱,持续时间远长于其他神通。
+   * 弹体是「柱」不是「刃」——它穿透一切且存续 2.2 秒,视觉上必须读得出持续性。
+   */
+  third_eye: {
+    id: 'third_eye', name: '第三目·神目', realmId: 'zhuji', texture: 'proj_third_eye',
+    form: 'projectile', geometry: 'beam',
+    damage: 12, cooldown: 1500, projectileSpeed: 700,
+    projectileCount: 1, pierce: 99, area: 1.1, duration: 2200,
+    color: 0xff4466,
+    usesRituals: true,
+  },
+};
 
-/** 取某个大境界的法术池 */
-export function getSpellsForRealm(realmId: string): WeaponConfig[] {
-  return Object.values(WEAPONS).filter((w) => w.realmId === realmId);
+/**
+ * 开局武器的兜底 id。
+ *
+ * 正常路径不走这里 —— 开局装备由 SpellSlotConfig 声明的「默认装备位」
+ * (格 1 = 火球术)决定,见 defaultSpell()。这里只防「解锁表被改坏、
+ * 一个默认位都没有」这种情况,所以指向同一位格 1 神通而非另一个法术:
+ * 兜底路径不该改变玩家的开局体验。
+ */
+export const STARTING_WEAPON = 'fireball';
+
+/**
+ * 可达性自检:法术表里的每一门都必须有**一条获取路径**。
+ *
+ * 与敌人侧 validateEnemyReachability 同一条规矩(见 CLAUDE.md 的调试面板约定):
+ * 写进表里却没有任何卡池能给出它,这门法术就只是死数据。
+ * 三条获取路径,任意一条命中即可:
+ *   神通栏解锁表 · 问鼎段争空位的那两张 · 进化的产物(EVOLUTIONS.evolved)
+ */
+export function validateSpellReachability(): string[] {
+  const reachable = new Set<string>();
+  for (const slot of SPELL_SLOTS) for (const id of slot.candidates) reachable.add(id);
+  for (const id of SPELL_SLOT_LAST.candidates) reachable.add(id);
+  for (const evo of EVOLUTIONS) {
+    reachable.add(evo.base);
+    reachable.add(evo.evolved);
+  }
+  return Object.keys(WEAPONS).filter((id) => !reachable.has(id));
 }
 
 /**
- * 「参悟新术」的候选池 —— 新池优先,旧池降级
+ * 反方向的自检:卡池里引用的、但本表里还不存在的 id。
  *
- * 1. 先取当前大境界尚未掌握的法术
- * 2. 若该池已学完,回退到更早境界尚未掌握的法术(新池优先,旧法术降级)
+ * 两个方向都要查,因为它们的失败方式不同却同样安静:
+ *   - 表里有、卡池没有 → 这门法术永远拿不到(上面那个函数)
+ *   - 卡池有、表里没有 → 那张卡点下去什么都不发生(buildDynamicCards 会 `if (cfg)` 悄悄跳过)
  *
- * @param realmId 当前大境界 id
- * @param has     判断某门法术是否已掌握
+ * ⚠️ 这个函数现在**预期**会返回一批 id —— 阶段 2 的神通(尸魅/蚊兽/定身术/
+ * 焚界古伞/流月/雷法/呼风唤雨)还没写,而解锁表已经按设计书定稿了。
+ * 所以它是一条待办清单,不是错误。黄泉指曾经就是在这里被查出来的:
+ * 解锁表写的是 huangquan_finger,法术表里却叫 huangquan_zhi。
  */
-export function getAttainableSpells(
-  realmId: string,
-  has: (id: string) => boolean,
-): WeaponConfig[] {
-  const realms = REALMS;
-  const idx = realms.findIndex((r) => r.id === realmId);
-  if (idx < 0) return [];
+export function validateSlotCandidates(): string[] {
+  const known = new Set(Object.keys(WEAPONS));
+  const refs = new Set<string>();
+  for (const slot of SPELL_SLOTS) for (const id of slot.candidates) refs.add(id);
+  for (const id of SPELL_SLOT_LAST.candidates) refs.add(id);
+  return [...refs].filter((id) => !known.has(id));
+}
 
-  const current = getSpellsForRealm(realmId).filter((w) => !has(w.id));
-  if (current.length > 0) return current;
-
-  // 当前池学完 —— 降级回更早境界
-  const older: WeaponConfig[] = [];
-  for (let i = idx - 1; i >= 0; i--) {
-    older.push(...getSpellsForRealm(realms[i].id).filter((w) => !has(w.id)));
-  }
-  return older;
+/**
+ * 进化形态不得出现在解锁表里。
+ *
+ * 进化形态只能由「满 8 重 + 钥匙 + 宝匣」结算得到。一旦它被写进某个卡的候选,
+ * 玩家就能跳过全部三个条件直接拿到 —— 整个进化系统当场作废,
+ * 而且这种错误在试玩里看起来完全正常(你确实拿到了一门更强的法术)。
+ */
+export function validateEvolvedNotOffered(): string[] {
+  const evolved = new Set(EVOLUTIONS.map((e) => e.evolved));
+  const offered = new Set<string>();
+  for (const slot of SPELL_SLOTS) for (const id of slot.candidates) offered.add(id);
+  for (const id of SPELL_SLOT_LAST.candidates) offered.add(id);
+  return [...offered].filter((id) => evolved.has(id));
 }

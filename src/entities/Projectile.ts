@@ -33,6 +33,15 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
   /** 连锁余辉时长(ms),在 preUpdate 里衰减 —— 不用 tween,因为池化对象带 tween 会跨存活期 */
   public chainGlowMs = 0;
 
+  /**
+   * 命中回调,由 WeaponSystem 注入(进化态的「炸开一片火海」)。
+   *
+   * 与 Slam.onImpact 同一套理由:不把 zone 池注入到投射物里,
+   * 而是交出回调。⚠️ 池化对象必须在 kill()/setup() 里清干净 ——
+   * 漏清会让上一发的回调在新弹上触发。
+   */
+  public onImpact: ((x: number, y: number) => void) | null = null;
+
   private enemyGroup!: Phaser.GameObjects.Group;
 
   constructor(scene: Phaser.Scene, enemyGroup: Phaser.GameObjects.Group) {
@@ -78,6 +87,8 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
     this.chainRadius = mods.chainRadius;
     this.chainFalloff = mods.chainFalloff;
     this.chainGlowMs = 0;
+    // 池复用必须重置回调,否则上一次发射的命中特效会在新弹上触发
+    this.onImpact = null;
     this.setAlpha(1);
     // 索敌半径随弹速放大,快弹不会因为射程不够而追不上
     this.searchRadius = 420 * (10 + this.speed / 40);
@@ -152,6 +163,7 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
     this.isDead = true;
     this.homingTarget = null;
     this.chainLeft = 0;
+    this.onImpact = null;
     this.setActive(false).setVisible(false);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
@@ -166,6 +178,10 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
    * 原地重定向复用现有 hitSet,零分配。
    */
   onHitEnemy(): void {
+    // 命中特效(进化态炸开火海)。每次命中都触发,不只是第一次 ——
+    // 穿透弹沿途每一段都该炸
+    this.onImpact?.(this.x, this.y);
+
     if (this.chainLeft > 0) {
       const next = findNearestEnemy(this.enemyGroup, this.x, this.y, this.chainRadius, this.hitSet);
       if (next) {

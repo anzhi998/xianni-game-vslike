@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仙逆幸存者 · Build 设计书 v2.9</title>
+<style>
+  :root{
+    --paper:#F7F4EC;
+    --paper-2:#FFFDF8;
+    --card:#FFFFFF;
+    --ink:#1F1E1B;
+    --ink-2:#5F5E5A;
+    --ink-3:#8A8880;
+    --line:rgba(31,30,27,.13);
+    --line-2:rgba(31,30,27,.07);
+    --cinnabar:#A32D2D;
+    --cinnabar-50:#FCEBEB;
+    --jade:#0F6E56;
+    --jade-50:#E1F5EE;
+    --gold:#854F0B;
+    --gold-50:#FAEEDA;
+    --blue:#185FA5;
+    --blue-50:#E6F1FB;
+    --purple:#534AB7;
+    --purple-50:#EEEDFE;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",-apple-system,sans-serif;
+    font-size:15px;
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 28px 96px;}
+
+  .hero{padding:72px 0 40px;border-bottom:1px solid var(--line);margin-bottom:44px;}
+  .hero .eyebrow{
+    font-size:12px;letter-spacing:.28em;color:var(--cinnabar);
+    text-transform:uppercase;margin-bottom:18px;font-weight:500;
+  }
+  .hero h1{
+    font-family:"Songti SC","SimSun","Noto Serif SC",serif;
+    font-size:46px;line-height:1.25;margin:0 0 6px;font-weight:600;letter-spacing:.02em;
+  }
+  .hero h1 small{font-size:18px;color:var(--ink-3);font-weight:400;letter-spacing:.12em;display:block;margin-top:12px;font-family:inherit;}
+  .hero p{margin:22px 0 0;color:var(--ink-2);max-width:680px;font-size:15px;}
+  .hero .quote{
+    margin-top:26px;padding-left:16px;border-left:2px solid var(--cinnabar);
+    font-family:"Songti SC","SimSun",serif;font-size:17px;color:var(--ink);
+  }
+  .hero .quote span{display:block;font-size:13px;color:var(--ink-3);margin-top:6px;font-family:inherit;}
+
+  .changelog{
+    background:var(--gold-50);border-radius:12px;padding:20px 24px;margin:0 0 12px;
+    border:1px solid rgba(133,79,11,.18);
+  }
+  .changelog h4{margin:0 0 10px;font-size:14px;color:var(--gold);letter-spacing:.06em;font-weight:500;}
+  .changelog ul{margin:0;padding-left:18px;font-size:13.5px;color:#633806;line-height:1.8;}
+  .changelog li b{color:var(--gold);}
+
+  h2{
+    font-family:"Songti SC","SimSun","Noto Serif SC",serif;
+    font-size:27px;font-weight:600;margin:64px 0 6px;letter-spacing:.02em;
+  }
+  h2 .num{
+    font-family:inherit;color:var(--cinnabar);font-size:16px;
+    letter-spacing:.1em;display:block;margin-bottom:8px;font-weight:500;
+  }
+  h3{
+    font-size:17px;font-weight:600;margin:38px 0 10px;letter-spacing:.01em;
+  }
+  h3::before{
+    content:"";display:inline-block;width:4px;height:4px;background:var(--cinnabar);
+    border-radius:50%;vertical-align:middle;margin-right:9px;position:relative;top:-2px;
+  }
+  .lead{color:var(--ink-2);margin:0 0 8px;}
+  hr.sep{border:0;border-top:1px solid var(--line-2);margin:40px 0;}
+
+  ul.plain{list-style:none;padding:0;margin:14px 0;}
+  ul.plain li{position:relative;padding-left:20px;margin-bottom:9px;color:var(--ink-2);}
+  ul.plain li::before{
+    content:"";position:absolute;left:2px;top:11px;width:5px;height:5px;
+    border:1px solid var(--cinnabar);border-radius:50%;
+  }
+  ul.plain li b{color:var(--ink);font-weight:600;}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin:22px 0;}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:20px 22px;
+  }
+  .card h4{margin:0 0 8px;font-size:16px;font-weight:600;}
+  .card .tag{
+    display:inline-block;font-size:11px;letter-spacing:.08em;padding:2px 8px;
+    border-radius:20px;margin-bottom:12px;font-weight:500;
+  }
+  .card p{margin:0;font-size:14px;color:var(--ink-2);line-height:1.7;}
+  .t-red{background:var(--cinnabar-50);color:var(--cinnabar);}
+  .t-jade{background:var(--jade-50);color:var(--jade);}
+  .t-gold{background:var(--gold-50);color:var(--gold);}
+  .t-blue{background:var(--blue-50);color:var(--blue);}
+  .t-purple{background:var(--purple-50);color:var(--purple);}
+
+  .tbl-wrap{overflow-x:auto;margin:20px 0;}
+  table{border-collapse:collapse;width:100%;font-size:14px;background:var(--paper-2);}
+  thead th{
+    text-align:left;font-weight:500;font-size:12px;letter-spacing:.08em;color:var(--ink-3);
+    padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:transparent;
+  }
+  tbody td{padding:11px 12px;border-bottom:1px solid var(--line-2);vertical-align:top;color:var(--ink-2);}
+  tbody tr:last-child td{border-bottom:0;}
+  tbody td:first-child{color:var(--ink);font-weight:500;white-space:nowrap;}
+  td .ev{color:var(--cinnabar);font-weight:500;}
+  td .key{color:var(--blue);font-weight:500;}
+  td.geo{white-space:nowrap;font-size:13px;color:var(--ink-3);}
+  .mono{font-variant-numeric:tabular-nums;}
+
+  .tl{margin:24px 0;border-left:1px solid var(--line);padding-left:0;list-style:none;}
+  .tl li{position:relative;padding:0 0 26px 26px;}
+  .tl li::before{
+    content:"";position:absolute;left:-4.5px;top:8px;width:8px;height:8px;
+    border-radius:50%;background:var(--paper);border:2px solid var(--cinnabar);
+  }
+  .tl li:last-child{padding-bottom:0;}
+  .tl .t{font-size:13px;color:var(--cinnabar);font-weight:500;letter-spacing:.04em;}
+  .tl .n{font-size:16px;font-weight:600;margin:2px 0 4px;}
+  .tl .d{font-size:14px;color:var(--ink-2);margin:0;}
+
+  .build{
+    background:var(--paper-2);border:1px solid var(--line);border-radius:14px;
+    padding:24px 26px;margin:26px 0;
+  }
+  .build header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px;}
+  .build header h3{margin:0;}
+  .build header h3::before{display:none;}
+  .build .role{font-size:13px;color:var(--ink-3);}
+  .build .row{display:grid;grid-template-columns:96px 1fr;gap:10px;padding:9px 0;border-top:1px solid var(--line-2);font-size:14px;}
+  .build .row:first-of-type{border-top:1px solid var(--line);margin-top:14px;}
+  .build .k{color:var(--ink-3);font-size:13px;padding-top:1px;}
+  .build .v{color:var(--ink-2);}
+  .build .v b{color:var(--ink);font-weight:600;}
+  .build .v .ev{color:var(--cinnabar);font-weight:500;}
+  .build .v .key{color:var(--blue);font-weight:500;}
+  .build .pc{margin-top:14px;padding-top:14px;border-top:1px solid var(--line-2);font-size:13px;color:var(--ink-2);}
+  .build .pc b{color:var(--jade);font-weight:600;}
+  .build .pc i{color:var(--cinnabar);font-style:normal;font-weight:600;}
+
+  .formula{
+    background:var(--blue-50);border-radius:12px;padding:20px 22px;margin:22px 0;
+    font-size:15px;color:#0C447C;
+  }
+  .formula .f{font-family:"Songti SC","SimSun",serif;font-size:19px;letter-spacing:.02em;}
+  .formula .note{font-size:13px;color:var(--blue);margin-top:8px;}
+
+  .principle{
+    background:var(--jade-50);border-radius:12px;padding:20px 24px;margin:22px 0;
+    font-size:14.5px;color:#085041;
+  }
+  .principle b{color:var(--jade);}
+
+  footer{
+    margin-top:72px;padding-top:26px;border-top:1px solid var(--line);
+    font-size:13px;color:var(--ink-3);
+  }
+  footer p{margin:0 0 8px;}
+  @media (max-width:640px){
+    .hero h1{font-size:32px;}
+    .wrap{padding:0 18px 72px;}
+    .build .row{grid-template-columns:1fr;gap:2px;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Build Design Document · v2.9</div>
+  <h1>仙逆幸存者
+    <small>把《吸血鬼幸存者》的 Build 骨架，套进耳根的逆仙之路</small>
+  </h1>
+  <p>上半部分是机制拆解：吸血鬼幸存者到底靠什么赢。下半部分是移植设计：把武器、被动、宝箱、死神逐个换成《仙逆》里的神通、法宝、秘境宝匣和天运子，并给出五套可以直接照抄的 Build。<b>敌方一侧（妖兽 · 修士 · 天道）已另出一册《怪物设计》</b>——武器有覆盖形状，敌人有逼近形状，两册互为两面。</p>
+  <div class="quote">
+    顺为凡，逆则仙，只在心中一念间。
+    <span>—— 定调整份设计的一句话：原版是「吸血鬼猎人」，这版是「逆修者」。</span>
+  </div>
+</header>
+
+<div class="changelog">
+  <h4>v2 修订说明</h4>
+  <ul>
+    <li><b>神通重做分类方式</b>：不再按主题罗列，改按「覆盖几何」分类，每件神通的形状唯一——站位与朝向重新成为决策。</li>
+    <li><b>重建进化配对</b>：每对「锁—钥匙」新增「同源逻辑」一列，配对必须能一眼说出理由，替换掉原先的硬凑组合。</li>
+    <li><b>被动改为法宝</b>：取消「道基意境」，被动栏整体改为<b>法宝</b>（物品），与原版被动的道具属性一致；法宝同时承担「属性来源」与「神通钥匙」双重职责。</li>
+    <li><b>补上数值锚点</b>：明确神通满 8 重、法宝满 5 级，并给出伤害曲线与进化倍率。</li>
+    <li><b>命名与调性修正</b>：梦道移出武器池，改为化神期解锁的本局大招；「天雷」与「天劫」不再混用。</li>
+    <li><b>【v2.1】新增成长型法宝「尊魂幡」</b>：全场唯一一件完全靠击杀数成长的法宝，不提供任何固定属性。它与「生死意境」合成<b>道化黄泉</b>，并把积攒的魂层一次性折算为永久伤害。</li>
+    <li><b>【v2.1】生死意境改回常规进化</b>：取消 v2 的「生之意境＋死之意境 融合」——把一份意境拆成两件武器过于生硬。现改为<b>一件神通（生死意境）＋ 一件法宝（尊魂幡）</b>，落回本作的标准进化公式。</li>
+    <li><b>【v2.1】命名让位</b>：尊魂幡独立成法宝后，万剑禁幡的本源形态更名为<b>禁天幡</b>（取原著「叠满八百道禁制，重现上古天劫」之意）。</li>
+    <li><b>【v2.2】尊魂幡改为「一次性筹码」</b>：合成道化黄泉后，尊魂幡<b>永久失效、该法宝格变为死格</b>（原版被动物品进化后仍全程有效，此处刻意背离）。取舍因此变得锋利——空转成本随敌人密度上升，进 20 分钟前必须确认后半局靠 5 格法宝能活。<b>不可逆</b>。</li>
+    <li><b>【v2.3】神通改由境界解锁</b>：补上缺失的「时间轴」——每件神通都有明确的登场境界，境界表同时就是解锁表。四条规则：每段只开两件且<b>段内几何不重复</b>；池子只增不减、同几何视为上位替代；元婴段的尸魅＋蚊兽是唯一的「同段同几何」例外（因为要凑融合）；<b>进化不受境界限制</b>，早期决策不会白费。另修正了旧文「按几何分六类」与实际类数对不上的问题。</li>
+    <li><b>【v2.4】凝气／筑基换血，新增「古神流」互斥分支</b>：凝气改为<b>火球术 ＋ 引力术</b>（新增第十四类几何「向心聚拢」）、筑基改为<b>黄泉指 ＋ 第三目 · 神目</b>；寂灭指并入黄泉指（保留进化名黄泉寂灭指）；<b>射神车整体转成法宝</b>（主动型，不再占神通栏）；<b>定身术移后到婴变</b>（最强开窗口手段不该早放）。<br><b>古神流</b>——结丹（21 级）弹出不可逆分支：入流后法术全部失效、只走体术，换取伤害 ×1.6、每件 ＋20% 生命与 ＋8% 减伤，以及「升级选项全给法宝」的红利；体术共 5 件、<b>不升重、不吃宝匣、不需要钥匙</b>，强度随境界自动成长；入流时提供一次洗点。两条路径各有专属终局解（法术流 流月长河／古神流 古神血袍）。<br>连带调整：不灭之躯与古神血袍划归古神流；原「逆修不死流」改写成古神流代表「古神不死流」；一步踏天流改用射神车法宝；天罗地网流成型境界后移到问鼎。</li>
+    <li><b>【v2.5】结丹开放极境</b>：空出的结丹位交给<b>极境</b>——结丹（21 级）开放、化神（51 级）<b>永久失效</b>的限时开关，开启期间伤害 ×2、冷却 ×0.5，但<b>经验与境界完全停滞</b>——正对应原著「极境同阶无敌，却一生难入化神，止于元婴」。结丹于是在同一段里开出两扇方向相反的门（极境冻结境界／古神流靠境界吃饭）。</li>
+    <li><b>【v2.6】呼风唤雨改为问鼎开放，并撤出兽潮流</b>：修正 v2.5 的一处错判——<b>呼风唤雨是 AOE，不是兽类神通</b>，把它放进「兽潮流」属于归类错误。现在：<b>呼风唤雨移到问鼎（71 级）</b>，与雷法 · 落雷合成「天象双件」，问鼎因此成为全作唯一的「大范围火力峰点段」。<br>为保持「每段两件」的整齐，连带把<b>焚界古伞移到婴变（61 级）</b>、<b>绝天之阵移到阴虚以上</b>（与流月同段，阴虚段回归「只放终局件」）。<br><b>兽潮流改用万剑禁幡护身</b>（结丹 21 级即可拿到），补上它「融合前没有自保」的短板，输出仍全部交给双兽；<b>天罗地网流正式收编呼风唤雨</b>，成为四件全 AOE、整套零瞄准的清屏流（代价是四把钥匙吃掉四格法宝，岁月玉简塞不进来）。</li>
+    <li><b>【v2.7】神通系统收口：补上第三条轴，并修掉三处自相矛盾</b>。这一版不加新内容，只做四件事。<br>
+      <b>① 补「境界 ↔ 分钟」换算表</b>（第二部 §一）——境界是等级刻度，实战判断却是分钟刻度（宝匣 10:00 掉落、天运子 30:00 降临），此前两套刻度从未打通，导致「尊魂幡该攥到什么时候」这类问题无从下手。<br>
+      <b>② 修掉前 20 级的自保空窗</b>：<b>万剑禁幡从结丹提到凝气（1 级）</b>。它是全局唯一的纯自保件，而原版开局的第一个位置就是「大蒜」（环绕自保）。凝气因此变成 3 件 / 1 格，开局第一次升级就在「抛投 · 聚拢 · 环绕」三种相反的手感里选；同时<b>结丹改为「纯决策段」——不开新神通，只开极境与古神流两扇门</b>。解锁规则从「每段两件」放宽为「<b>每段 1–3 件、段内几何不重复</b>」。<br>
+      <b>③ 修掉终局解的可达性</b>：<b>流月与不灭之躯从阴虚以上（81）提到婴变（61）</b>。原来的位置让素材只剩几分钟的养成窗口——又要养到 8 重、又要占两格素材、还要等一个宝匣，「最后几分钟的赌博」根本没有胜率；现在有约 14 分钟。阴虚以上段只留绝天之阵，定位从「终局件」改为「收尾件」。<br>
+      <b>④ 修掉三处自相矛盾</b>：<b>天运子的解法</b>——v2.4 把两件终局解划进两条互斥路径之后，第四部仍写着「固定解法＝两件同时持有」，现已改为<b>每条路径各有一个完整解</b>；<b>几何表注记</b>——原写「法术池里每一类几何都只有一件、跨件同类只有一组」，与实际情况（五类被复用）不符，现已列出准确清单；<b>极境缺关闭规则</b>——补上「<b>开启后锁定 30 秒、同一局最多 3 次</b>」，否则随手开关等于零成本，这道取舍题就不成立。<br>
+      <b>另修掉一处旧陷阱</b>：<b>灵液 · 天逆</b> 原本同时是火球术（凝气）与焚界古伞（婴变）的钥匙，等于让第 5 级的决定到第 61 级才收账；现在它专属火球术，焚界古伞改用<b>凝神香</b>（伞的短板是「一瞬」，持续时长比「催火」对症得多）。</li>
+    <li><b>【v2.8】补上缺失的另一半：新增第五部「怪物设计」</b>。此前整份文档只设计了武器，却没有设计敌人——而原版的决策其实是<b>「武器几何 × 敌人逼近几何」共同制造</b>的：正因为鞭子只打左右、而蝙蝠会绕到侧面，「站位」才成为一个问题。<br>
+      <b>内容</b>：① 敌方逼近几何 ↔ 我方覆盖几何的<b>对偶表</b>（六种逼近方式，各自只有一类武器克制得住）；② <b>六个敌人原型</b>（群怪／坦克／术修／潜行／自爆／衍体），每个原型都带一条明确的「设计职责」；③ <b>境界刷怪表</b>——八个境界段各换一批主怪，每段都有要教的「第一次」；④ <b>八种机制怪</b>，对应原版 Stalker／Drowner／Maddener／Trickster 那类一次性事件怪；⑤ <b>精英 · 秘境守 · 伪宝匣</b>；⑥ <b>三条抗性</b>（定身／即死／牵引）与「同一只精英最多免疫两条」的原则；⑦ <b>数值锚点</b>。<br>
+      <b>其中一条是意外收获</b>：原版那条著名的「Boss 血量 = 655350 × 玩家等级」，在本作与<b>极境</b>形成了系统级呼应——极境冻结境界，正好就是原版死神关卡「压级 + 爆发」的同一招。于是极境从一个孤立的爆发开关，升级成一套有完整逻辑的打法；而「HP × 境界」也不再是简单地照搬原版数值。</li>
+    <li><b>【v2.9】怪物设计拆分为独立文档</b>。v2.8 新增的第五部内容偏厚（对偶表、六个原型、境界刷怪表、八种机制怪、精英与秘境守、三条抗性、数值锚点），留在 Build 设计书里会让主线失重，故独立成册：<b>《仙逆幸存者 · 怪物设计》</b>，并补上主设计书没有的两样——一张<b>按境界段排序的怪物图鉴速查</b>，以及一张<b>机制怪与特殊单位索引</b>。<br>本册第五部相应压缩为导览，只保留一条结论——「HP × 玩家境界」与极境撞出的<b>压级流</b>，因为它同时属于武器侧。两册口径一致：武器侧设定以本册为准，敌方一侧以《怪物设计》为准。</li>
+  </ul>
+</div>
+
+<!-- ============ 第一部 ============ -->
+<h2><span class="num">第一部</span>原版拆解：吸血鬼幸存者的 Build 内核</h2>
+<p class="lead">所有攻略最后都会收敛到同一件事——<b>用最少的栏位，换最大的进化数量，并在正确的分钟数完成它</b>。武器只是载体，真正的游戏是栏位经济与时间管理。</p>
+
+<h3>核心公式</h3>
+<div class="formula">
+  <div class="f">进化 = 基础武器满级(8) + 对应被动物品 + 拾取 10 分钟后掉落的宝箱</div>
+  <div class="note">三者缺一不可。宝箱永远优先结算进化而非金币，因此攒着一次开 3 件 / 5 件宝箱，可以一口气触发多个进化——这是全局最爽的爆发点。</div>
+</div>
+
+<h3>三层引擎</h3>
+<ul class="plain">
+  <li><b>武器层（6 格）</b>——不是「拿到就用」，而是「拿到就养」。6 格全部围着能进化的武器配，捡了却养不起来的武器是最典型的翻车点。</li>
+  <li><b>被动层（6 格）</b>——被动不是属性配件，是<b>进化钥匙</b>。填满 6 格却漏掉某件进化素材，等于自杀。通用最优是：空之书（冷却）、菠菜（伤害）、复制器（投射物）、磁铁（拾取）、烛台（范围）、皇冠（经验）。</li>
+  <li><b>节奏层</b>——同样的装备，在第 12 分钟成型和第 25 分钟成型，是两个难度。前中期靠 AOE 保命铺底盘，10 分钟之后所有决策都应该服务于「尽快吃到第一个进化」。</li>
+</ul>
+
+<h3>破局时间轴</h3>
+<ul class="tl">
+  <li><span class="t">0–10 分钟</span>
+    <div class="n">铺底盘</div>
+    <p class="d">不要捡六把 1 级武器。拿 1–2 把自动索敌的 AOE（大蒜、圣经、圣水）负责清场与保命，同时把 2–3 把主力推到 4–6 级，被动优先抓后期要用的进化钥匙。</p>
+  </li>
+  <li><span class="t">10–20 分钟</span>
+    <div class="n">抓进化</div>
+    <p class="d">第一个宝箱到手，完成第一次进化——这是全场最大的实力跃升。目标是 15 分钟前进化一个、20 分钟前进化第二个。</p>
+  </li>
+  <li><span class="t">20–30 分钟</span>
+    <div class="n">滚雪球</div>
+    <p class="d">3–4 个进化成型，开始用通用被动补 CD 与范围。清屏覆盖率要达到「整屏无安全区」，否则怪量会推着你走。</p>
+  </li>
+  <li><span class="t">30:00</span>
+    <div class="n">扛死神</div>
+    <p class="d">死神的血量不可正常打空。标准解法是固定搭配：无限走廊（时钟柳叶刀＋双戒指）周期性砍掉死神一半血，配上深红斗篷（月桂＋双 Metaglio）把单次受击上限压到 10 点，硬扛满 5 分钟通关。</p>
+  </li>
+</ul>
+
+<h3>五套经典套路</h3>
+<div class="grid2">
+  <div class="card">
+    <span class="tag t-jade">苟活</span>
+    <h4>不可触碰流</h4>
+    <p>大蒜→噬魂者 ＋ 圣经→邪恶晚祷。一圈书挡近身、一大圈大蒜持续回血，人可以走进蝙蝠堆里不掉血。新手最稳。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-blue">清屏</span>
+    <h4>屏幕清空流</h4>
+    <p>斧头→死亡螺旋 ＋ 圣水→拉博拉。远处有旋转镰刀，脚下是跟随移动的伤害池，整屏只剩伤害数字。缺点是视野全被自己糊住。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-red">单体</span>
+    <h4>Boss 融化流</h4>
+    <p>火焰杖→地狱火 ＋ 匕首→千刃，两者同向集火，配空之书压 CD，变成一台定向输出机。精英和 Boss 见面即死。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-purple">融合</span>
+    <h4>双鸟融合流</h4>
+    <p>白鸟＋黑鸟融合成破坏者，融合后反而空出一个武器栏。前期两根羽毛都极弱，是高风险的赌狗选择。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-gold">农场</span>
+    <h4>经验农场流</h4>
+    <p>五芒星→华丽月亮，周期性清空全屏并吸走所有经验宝石。代价是它杀死的敌人不掉金币——纯粹的取舍设计。</p>
+  </div>
+</div>
+
+<h3>三条不写在教程里的细节</h3>
+<ul class="plain">
+  <li><b>金币发酵</b>：前 5 分钟不去捡金币，等磁铁与石面具成型后再回头扫，收益翻倍。</li>
+  <li><b>迎怪而上</b>：不要往没怪的地方跑。怪越多、经验密度越高、进化越快，反直觉但确实更快。</li>
+  <li><b>留一个不进化</b>：10 / 20 分钟的 Boss 出现时，刻意留一把未进化的武器，它的瞬间爆发往往比进化形态更高。</li>
+</ul>
+
+<hr class="sep">
+
+<!-- ============ 第二部 ============ -->
+<h2><span class="num">第二部</span>移植设计：神通 · 法宝 · 宝匣</h2>
+<p class="lead">移植准则是<b>保留功能，替换外壳</b>——栏位数、进化三条件、时间节奏一律不动，只把名词换成《仙逆》的世界观。但 v2 修正了一件事：<b>外壳也必须自带玩法信息</b>，不能只是换个名字。</p>
+
+<div class="principle">
+  <b>六条设计铁律</b><br>
+  一、<b>每件神通必须有一个唯一的覆盖形状</b>，同类型不超过两件——形状决定站位与朝向，这是原版乐趣的来源。<br>
+  二、<b>每件神通必须有明确的登场境界</b>——境界是解锁门。神通池随境界放行，所以要同时管住「什么时候拿到」与「拿到什么样」。没有这条，神通就会退化成一堆没有先后的并列选项。<br>
+  三、<b>钥匙与锁必须同源</b>——进化材料与神通之间要有能一句话说清的血脉、传承或短板关系，玩家看一眼就记得住。<br>
+  四、<b>被动是物品，不是概念</b>——所以它叫法宝。法宝既是稀缺属性的来源，也是让神通破格的钥匙。<br>
+  五、<b>路线必须互斥且各有专属终局解</b>——古神流与法术流的取舍要重到不能反悔，否则分支就只是个花招。<br>
+  六、<b>敌人必须出题，而不是送经验</b>——每个敌人原型的逼近形状都要与武器的覆盖形状错开：错开的地方就是盲区，有盲区才有站位决策。删掉任何一个原型之后如果玩法毫无变化，它就不该存在。（见《怪物设计》独立文档）
+</div>
+
+<h3>一、境界 = 等级，同时也是神通的解锁门</h3>
+<p class="lead">把 1–100 级直接对应成修炼境界，让「升级」这件事本身就带剧情感。每 10 级是一次大境界圆满，也是天劫触发点。<b>更要紧的是：境界决定你什么时候能拿到哪一件神通</b>——它既是剧情，也是本作的解锁表。</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>等级</th><th>境界</th><th>神通栏</th><th>本段新开放的神通</th><th>游戏内意义</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">1–15</td><td>凝气一至十五层</td><td class="mono">第 1 格</td><td>火球术　·　引力术　·　万剑禁幡</td><td><b>法术入门期</b>。三件神通覆盖三种完全相反的手感——抛投、聚拢、环绕——<b>开局第一次升级就是「打出去 / 拉过来 / 护住自己」的三选一</b>，这是本作前半局唯一的初始决策点</td></tr>
+    <tr><td class="mono">16–20</td><td>筑基 · 初/中/后/假丹</td><td class="mono">第 2 格 <span class="ts">（16 级）</span></td><td>黄泉指　·　第三目 · 神目</td><td>可御剑飞行（移速提升）；<b>指系神通与天目在此开放</b>，第一次拥有远程点杀能力。本段的「假丹」是结丹前的临门一脚——而真正的<b>极境</b>不是境界、是一个状态，要到结丹才开放（见第四部）</td></tr>
+    <tr><td class="mono">21–30</td><td>结丹 · 初/中/后/大圆满</td><td class="mono">第 3 格 <span class="ts">（21 级）</span></td><td><b>不开新神通</b>　＋　<b>【极境 · 开关】</b>　＋　<b>【古神流 · 分支】</b></td><td>第一次拥有清场能力。<b>结丹是全局唯一的「纯决策段」——它不给你新神通，只给你两扇门</b>：一扇通往古神流（入则法术尽废、只走体术），另一扇是<b>极境</b>——同阶无敌、却让自己停滞的开关。两者方向正好相反（一个冻结境界、一个靠境界吃饭），详见下节与第四部</td></tr>
+    <tr><td class="mono">31–50</td><td>元婴 · 初/中/后/大圆满</td><td class="mono">第 4 格 <span class="ts">（31 级）</span></td><td>尸魅　·　蚊兽</td><td>元婴不灭可原地复活一次；这一段开放<b>本作唯一的中期融合组</b>（蚊兽 ＋ 尸魅 → 蚊兽尸魅潮）。古神流则在此拿到唯一的控制 <b>古神怒吼</b></td></tr>
+    <tr><td class="mono">51–60</td><td>化神 · 意境与元婴融合成元神</td><td class="mono">无新栏位</td><td>生死意境　·　因果千丝</td><td><b>不给栏位，改给「梦道」大招</b>——本局一次的终极神通（见第四部）。两条「意境」在此开放，也意味着<b>黄泉流的投资期被天然限定在化神之前</b></td></tr>
+    <tr><td class="mono">61–70</td><td>婴变 · 凡躯化仙体</td><td class="mono">第 5 格 <span class="ts">（61 级）</span></td><td>定身术　·　焚界古伞　·　流月</td><td>全属性 +15%；凡躯化仙体——<b>两条路的「终极件」都在此登场，而且从此留出十几分钟的养成窗口</b>：法术流在这里拿到终局解素材<b>流月</b>（流月长河），古神流在这里拿到<b>不灭之躯</b>（古神血袍）。<b>定身术刻意压到这一段</b>——它是最强的「开窗口」手段，早放会毁掉前中期的压力曲线</td></tr>
+    <tr><td class="mono">71–80</td><td>问鼎 · 元力初成</td><td class="mono">第 6 格 <span class="ts">（71 级）</span></td><td>雷法 · 落雷　·　呼风唤雨</td><td>神通栏满格；元力初成，掌控天地之力——<b>雷与风雨在此合流</b>。两件天象神通同段登场，是全作唯一的「大范围火力峰点」</td></tr>
+    <tr><td class="mono">81–100</td><td>阴虚 / 阳实 / 窥涅 / 净涅 / 碎涅</td><td class="mono">无新栏位</td><td>绝天之阵</td><td>Limit Break 区间，属性成长转为指数级。<b>整段只放一件「收尾件」</b>：绝天之阵的最强形态斩天之剑。到这一段，你的主力输出手段其实早在婴变就位了——它只是把收尾效率再抬一档</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>境界 ↔ 分钟：把两套刻度打通</h3>
+<p class="lead">境界是等级刻度，但实战里的每一个判断都是分钟刻度——宝匣 10:00 才掉落、天运子 30:00 降临。这两套刻度此前从未打通，于是「尊魂幡该攥到什么时候」这类问题根本没法算。下表按原版节奏粗估（实战会因打法浮动），但它足以给所有决策一个共同的锚点。</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>境界</th><th>粗估时点</th><th>你此刻该在做的事</th></tr></thead>
+  <tbody>
+    <tr><td>凝气 / 筑基</td><td class="mono">0–3 min</td><td>铺底盘。凝气第一次升级就要在「打出去 / 拉过来 / 护住自己」里选一个</td></tr>
+    <tr><td>结丹 21</td><td class="mono">~4 min</td><td>两扇门同时打开：修法（或入古神流）＋ 极境。这一步之后，终局解就只剩一个可能</td></tr>
+    <tr><td>元婴 31</td><td class="mono">~6 min</td><td>凑齐第一组融合素材（双兽），或完成第一次宝匣进化</td></tr>
+    <tr><td>化神 51</td><td class="mono">~12 min</td><td>黄泉流的投资期在这里开始计时；宝匣此时早已开始掉落</td></tr>
+    <tr><td>婴变 61</td><td class="mono">~16 min</td><td>终局解素材到手，此后约 14 分钟都是养成窗口——够养到 8 重、凑两格素材、再等一个宝匣</td></tr>
+    <tr><td>问鼎 71</td><td class="mono">~19 min</td><td>天象双件齐出，全作火力最陡的一跳</td></tr>
+    <tr><td>阴虚以上 81</td><td class="mono">~22–25 min</td><td>Limit Break。只剩下收尾件，别指望在这里补主力</td></tr>
+    <tr><td>天运子</td><td class="mono">30:00</td><td>扛满 5 分钟通关——而这一局的终局解此刻应当已经成型</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="lead" style="font-size:13.5px;color:var(--ink-3);margin-top:-6px;">这张表也解释了 v2.6 之前的一个隐患：终局解素材原本压在 81 级（第 22–25 分钟），离天运子只剩几分钟——根本来不及养。现在提到婴变（第 16 分钟）才有真正的博弈空间。</p>
+
+<h3>二、神通的两条轴：境界管「何时拿到」，几何管「手感如何」</h3>
+<p class="lead">上一版只有「几何」一条轴，于是这十几件神通看起来像一堆并列的选项、没有先后——这正是「混乱」的来源。补上境界轴之后，每件神通都有明确的两个坐标：<b>登场时刻</b>与<b>覆盖形状</b>。上表看时间顺序，下表看手感，名字一一对应。</p>
+<div class="principle">
+  <b>解锁系统的五条规则</b><br>
+  一、<b>每段只开 1–3 件，且同段内几何互不重复</b>——保证任何时刻你手上的选择永远是「形状不同的几件」，而不是「几件一样的」。两处特例写死在这里：<b>凝气段开 3 件</b>（抛投 / 聚拢 / 环绕，手感完全相反的三件），<b>而结丹段一件都不开</b>——它只开两扇门（<b>极境</b> 开关与<b>古神流</b> 分支）。<br>
+  二、<b>池子只增不减，同几何视为上位替代</b>——晚境界的同类神通更强，但不锁掉早期那件：同属环绕自身，万剑禁幡（凝气）是贴身的旋转剑气，不灭之躯（古神流 · 婴变）是周期性护体，取向完全不同。<br>
+  三、<b>唯一允许「同段同几何」的是元婴段的尸魅 ＋ 蚊兽</b>——两件同为自动索敌，因为它们是<b>一组融合素材</b>，必须在同一段里凑齐。<br>
+  四、<b>进化不受境界限制</b>——进化只看「满 8 重 ＋ 对钥匙 ＋ 10 分钟后宝匣」，与境界无关。凝气期拿的火球术，到问鼎期照样能进化成九幽火海：<b>早期决策永远不会白费</b>。<br>
+  五、<b>唯一的例外是「入古神流」</b>——见下节。它是全局唯一一处「早期投入会被作废」的地方，而作废之前给了你一次洗点。
+</div>
+<p class="lead">这顺带治好了原版的一个老毛病：前期经验被摊在六件武器上，结果一件都升不满。<b>本作把 1–20 级的神通池压在 3–5 件</b>，配合前期只有一到两个栏位，升级选项必然集中在少数几件上——升重快、进化早。<b>把「精」放在前期，把「选」放在后期</b>，这是与原版相反的时间结构。</p>
+<p class="lead"><b>神通按「覆盖几何」划分十四类（下表）</b>。原版的武器之所以有手感，是因为<b>覆盖形状互不相同</b>：鞭子只打左右、斧头抛过头顶、圣水随机落地、闪电全屏乱劈。形状不同 → 有盲区 → 站位和朝向成为决策。<b>本作新增第十四类「向心聚拢」</b>（引力术）——它几乎不造成伤害，只把敌人拖过来。</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>几何类别</th><th>覆盖形状</th><th>玩家的决策</th><th>本作神通</th><th>解锁境界</th></tr></thead>
+  <tbody>
+    <tr><td>朝向直线</td><td class="geo">面向方向的一条穿刺线</td><td>你必须始终对着威胁最大的方向</td><td>黄泉指</td><td class="key">筑基</td></tr>
+    <tr><td>朝向扇形</td><td class="geo">面向方向的一片扇面</td><td>扇面之外是盲区，不能背对怪流</td><td>焚界古伞</td><td class="key">婴变</td></tr>
+    <tr><td>朝向光柱</td><td class="geo">面向方向的持续穿透光柱</td><td>光柱要持续压在精英身上</td><td>第三目 · 神目</td><td class="key">筑基</td></tr>
+    <tr><td>左右横扫</td><td class="geo">身体两侧的横向打击</td><td>前后都是盲区，必须站进敌流正中</td><td>古神之臂 <span class="ts">（古神流专属）</span></td><td class="key">结丹</td></tr>
+    <tr><td>向上抛投</td><td class="geo">抛物线越过自身落到身后</td><td>贴脸的怪打不到，要靠走位拉开</td><td>火球术</td><td class="key">凝气</td></tr>
+    <tr><td><b>向心聚拢</b> <span class="ts">（新增）</span></td><td class="geo">把敌人拖向自己／一点的引力场</td><td>它本身几乎不造成伤害——<b>先聚拢，再让别的神通打</b></td><td>引力术</td><td class="key">凝气</td></tr>
+    <tr><td>环绕自身</td><td class="geo">以自己为圆心的常驻领域</td><td>要主动往怪堆里钻</td><td>万剑禁幡</td><td class="key">凝气</td></tr>
+    <tr><td>脚下领域</td><td class="geo">跟随自己移动的减速／伤害域</td><td>站桩时间越长收益越高</td><td>生死意境　／　流月</td><td class="key">化神　／　婴变</td></tr>
+    <tr><td>地面布点</td><td class="geo">随机落在地面的伤害水洼</td><td>你完全控不住落点，只能靠范围堆</td><td>呼风唤雨</td><td class="key">问鼎</td></tr>
+    <tr><td>全屏随机</td><td class="geo">无视位置的随机结算</td><td>你控不了，纯粹赌覆盖</td><td>雷法 · 落雷</td><td class="key">问鼎</td></tr>
+    <tr><td>全场扫描</td><td class="geo">穿透一切、不造成伤害的冻结环</td><td>用来开窗口，不靠它输出</td><td>定身术</td><td class="key">婴变</td></tr>
+    <tr><td>弹射反弹</td><td class="geo">遇边缘或敌人反弹的持久弹道</td><td>站位越贴边、越容易被反复弹中</td><td>因果千丝</td><td class="key">化神</td></tr>
+    <tr><td>自动索敌</td><td class="geo">锁定最近的敌人自主攻击</td><td>完全不需要瞄准，数量即强度</td><td>尸魅　／　蚊兽</td><td class="key">元婴　／　元婴</td></tr>
+    <tr><td>周期结算</td><td class="geo">按固定周期结算全屏</td><td>抓节奏，卡在怪潮峰值时触发</td><td>绝天之阵</td><td class="key">阴虚以上</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="lead" style="font-size:13.5px;color:var(--ink-3);margin-top:-6px;">十四类几何里，<b>九类各自只服务一件神通，另外五类会被复用</b>——原版同样如此（大蒜、圣经、圣水其实都属「环绕自身」）。本作这五处复用是逐条核过的：脚下领域（生死意境 / 流月）、自动索敌（尸魅 / 蚊兽）、全场扫描（定身术 / 古神怒吼）、朝向直线（黄泉指 / 古神之拳）、环绕自身（万剑禁幡 / 不灭之躯）。<b>复用的前提是取向必须不同</b>——环绕自身里，万剑禁幡是输出、不灭之躯是护体，而且分属两条路径。<br><b>问鼎是全场唯一「两件同属天象」的一段</b>：雷法 · 落雷（全屏随机）与呼风唤雨（地面布点）在此合流，都不需要瞄准——这一段就是本作的大范围火力峰点。<b>另：「极境」不在这张表里——因为它没有覆盖形状</b>，它不是一件打出去的神通，而是一个作用在自己身上的开关。</p>
+
+<h3>三、古神流：结丹期的分支抉择</h3>
+<p class="lead">这是本作唯一一处<b>不可逆的路线分支</b>，也是把「神通池」这套系统真正做出重量的地方。结丹期（21 级）会弹出一次抉择：<b>入古神流，还是继续修法。</b></p>
+<p class="lead">同一段还开出另一扇门——<b>极境</b>（见第四部）。它与古神流的方向正好相反：极境冻结境界、换取爆发，而古神流恰恰把体术强度完全绑在境界上。<b>想走古神流，就基本等于放弃极境。</b></p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>项目</th><th>继续修法（默认）</th><th>入古神流</th></tr></thead>
+  <tbody>
+    <tr><td>神通来源</td><td>法术池，十四类几何全覆盖</td><td><b>体术池</b>——法术类神通全部不可获取</td></tr>
+    <tr><td>已修的法术</td><td>照常生效</td><td><b>全部失效</b>：占格、不生效——与尊魂幡合成后的「死格」是同一套语言</td></tr>
+    <tr><td>神通怎么变强</td><td>升重（8 重）＋ 钥匙法宝 ＋ 宝匣进化</td><td><b>随境界自动成长</b>：凝气 1 重 → 筑基 2 重 → … → 阴虚 8 重</td></tr>
+    <tr><td>升级选项</td><td>神通与法宝各占一半</td><td><b>全部让给法宝</b>——体术不参与抽卡，法宝满得更快</td></tr>
+    <tr><td>射程</td><td>远中近兼备，有全屏清场</td><td><b>全部贴身几何</b>——零远程，也没有全屏结算</td></tr>
+    <tr><td>栏位占用</td><td>6 格神通填满</td><td><b>只有 5 件体术</b>，天生少一格神通位</td></tr>
+    <tr><td>专属终局解</td><td><b>流月长河</b>（极阳命珠 ＋ 极阴命珠）</td><td><b>古神血袍 · 不灭体</b>（生轮玉简 ＋ 死轮玉简）</td></tr>
+    <tr><td>洗点</td><td>—</td><td>入流那一刻，已投入的法术重数<b>全额折算</b>到古神之臂上——<b>结丹是全局唯一的洗点窗口</b></td></tr>
+  </tbody>
+</table>
+</div>
+<div class="principle">
+  <b>为什么古神线不做「钥匙进化」</b><br>
+  原版所有武器都要靠「钥匙 ＋ 宝匣」破格，因为那是原版的乐趣所在。但古神的设定是<b>肉身成圣</b>——力量来自自身，不来自外物。所以体术神通<b>不吃宝匣、不需要钥匙、也不参与升级抽卡</b>，强度直接绑定你的境界：<b>你只要往上走，身体就自己变强</b>。<br>
+  这条规则顺手解决了两个麻烦：一是古神线不必和法术流挤同一批钥匙法宝（否则必然出现「硬凑配对」，正是 v1 被毙掉的老毛病）；二是它的成长曲线天然吻合「境界」这条主轴。代价也很清楚：<b>永远吃不到宝匣进化那一次 ×2.2 的跳档。</b>
+</div>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>境界</th><th>古神线神通</th><th>覆盖几何</th><th>它在流派里的位置</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">结丹 21</td><td><b>古神之臂</b> <span class="ts">（入流即得）</span></td><td>左右横扫</td><td>全程主输出——前后都是盲区，必须站进敌流正中，与法术流「拉开距离」的本能完全相反</td></tr>
+    <tr><td class="mono">元婴 31</td><td><b>古神怒吼</b></td><td>全场扫描</td><td>唯一的控制手段：一声吼住全屏，给自己创造贴身窗口</td></tr>
+    <tr><td class="mono">化神 51</td><td><b>古神裂地</b></td><td>脚下领域</td><td>站桩的资本：脚下持续裂开，把「贴身」变成安全区</td></tr>
+    <tr><td class="mono">婴变 61</td><td><b>古神之拳</b>　·　<b>不灭之躯</b></td><td>朝向直线（极短）／ 环绕自身 · 护体</td><td>单点爆发＋终局件同段到位：<b>不灭之躯放在「凡躯化仙体」这一段</b>正是肉身成圣的终点，与生轮／死轮玉简合成 <b>古神血袍 · 不灭体</b>——比法术流更早，因为古神线本来就不靠宝匣成长</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="lead" style="font-size:13.5px;color:var(--ink-3);margin-top:-6px;">只有 5 件，因为古神流是<b>主动放弃一格神通位、换取每一格更高的强度与身板</b>（体术基础伤害 ×1.6；每件体术 ＋20% 生命上限、＋8% 减伤）。这是刻意的非对称：法术流靠「多一件、多一种形状」，古神流靠「少一件、但每件都更硬」。<br>另注：原本挂在法术池的 <b>不灭之躯</b> 与终局解 <b>古神血袍</b> 一并划归古神流——「古神血袍」本来就该是古神流的终点。</p>
+
+<h3>四、进化配对：钥匙必须与锁同源</h3>
+<p class="lead">原版的配对之所以好记，是因为它总能一句话讲通：鞭子（血肉）＋空心之心（血肉）＝血鞭；圣水（范围液体）＋磁铁（吸附）＝拉博拉。下表每一行都补上了这个理由。<b>本表只列法术池</b>——古神线的体术神通不做钥匙进化（见上节）。</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>基础神通</th><th>设计上留的口子</th><th>钥匙（法宝）</th><th>同源逻辑 —— 为什么是它</th><th>本源神通</th></tr></thead>
+  <tbody>
+    <tr><td>黄泉指</td><td>单发、慢</td><td class="key">御剑符</td><td>剑修之符，把「指」化成连绵不断的剑芒</td><td class="ev">黄泉寂灭指</td></tr>
+    <tr><td>火球术</td><td>火球太少、落点散</td><td class="key">灵液 · 天逆</td><td>天逆灵液催火，一枚火球烧成一片火海</td><td class="ev">九幽火海</td></tr>
+    <tr><td>引力术</td><td>吸得住、留不住</td><td class="key">神识罗盘</td><td>神识越广，引力笼罩越远，敌人才被拖住不放</td><td class="ev">十方引力</td></tr>
+    <tr><td>万剑禁幡</td><td>剑气散得太快</td><td class="key">凝神香</td><td>香能凝神——剑气因神凝而久驻不散</td><td class="ev">禁天幡</td></tr>
+    <tr><td>焚界古伞</td><td>伞开一瞬、伤害薄</td><td class="key">凝神香</td><td>香能凝神——伞开九次而不熄</td><td class="ev">焚天九重伞</td></tr>
+    <tr><td>雷法 · 落雷</td><td>落雷太少</td><td class="key">分身玉简</td><td>分身引雷——每一具分身各引一道</td><td class="ev">九天神雷</td></tr>
+    <tr><td>呼风唤雨</td><td>水洼留不住、范围小</td><td class="key">摄灵囊</td><td>储物之囊收纳风雨，雨幕被聚拢放大</td><td class="ev">黑龙行雨</td></tr>
+    <tr><td>因果千丝</td><td>丝线太短、断了就没了</td><td class="key">命运丝线</td><td>因果意境本体——因因果未了，丝线不断</td><td class="ev">天罗地网</td></tr>
+    <tr><td>蚊兽</td><td>太少、追不上</td><td class="key">风翼骨</td><td>兽骨令蚊兽迅捷，快得能成群</td><td class="ev">蚊兽潮</td></tr>
+    <tr><td>尸魅</td><td>会腐烂、活得短</td><td class="key">血煞球</td><td>血煞养尸，尸魅久战不腐</td><td class="ev">尸魅王</td></tr>
+    <tr><td>第三目 · 神目</td><td>红芒只照一条线</td><td class="key">神识罗盘</td><td>神识开阔，红芒覆盖面成倍扩张</td><td class="ev">第三目 · 时光红芒</td></tr>
+    <tr><td>定身术</td><td>只定得住低阶修士</td><td class="key">定魂钉</td><td>钉魂之器——从定身进阶为定魂</td><td class="ev">定神术</td></tr>
+    <tr><td>绝天之阵</td><td>周期太长，衔接不上怪潮</td><td class="key">悟道石</td><td>悟道愈深，阵法推演愈快</td><td class="ev">斩天之剑</td></tr>
+    <tr><td>生死意境</td><td>领域小，伤害与回复都不够看</td><td class="key">尊魂幡</td><td>阴魂至宝——幡中十万魂魄，正是黄泉的源头</td><td class="ev">道化黄泉</td></tr>
+    <tr><td>流月</td><td>领域小，且不削血</td><td class="key">极阳命珠 ＋ 极阴命珠</td><td>阴阳圆满，时间长河才成形</td><td class="ev">流月长河</td></tr>
+    <tr><td>不灭之躯 <span class="ts">（古神流专属）</span></td><td>无敌帧太短</td><td class="key">生轮玉简 ＋ 死轮玉简</td><td>生死双轮补全不灭体，死生相接而不断</td><td class="ev">古神血袍 · 不灭体</td></tr>
+  </tbody>
+</table>
+</div>
+<p class="lead" style="font-size:13.5px;color:var(--ink-3);margin-top:-6px;">最后两行是<b>双素材进化</b>（对应原版无限走廊与深红斗篷），保留了「两格法宝换一件终局解」的取舍。区别在于：这两件现在<b>分属两条路径</b>——流月长河归法术流、古神血袍归古神流。v2.2 之前它们是「理论上冲突、只能二选一」，如今这个冲突变成了<b>流派选择本身的一部分</b>，反而更干净。<br>神识罗盘同时服务于引力术与第三目；<b>凝神香同时服务于万剑禁幡与焚界古伞</b>——与原版空之书同时服务魔杖与激光是同一处理。<br>另外修掉了一处旧陷阱：<b>灵液 · 天逆</b> 原本被设计成火球术（凝气）与焚界古伞（婴变）的共用钥匙，等于让第 5 级做的决定到第 61 级才收账；现在它专属火球术，焚界古伞改用凝神香。<br>另有唯一一条<b>带成长筹码</b>的进化——「生死意境 ＋ 尊魂幡 → 道化黄泉」，它的钥匙需要玩家提前投资，见第七节。</p>
+
+<h3>五、法宝 = 被动</h3>
+<p class="lead">被动栏从头到尾都是<b>物品</b>——这是原版的设计，也是 v2 把「道基意境」全部换成法宝的原因。法宝同时承担两个职责：提供稀缺属性，以及充当神通的钥匙。</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>法宝</th><th>原版对应</th><th>效果（满 5 级）</th><th>职责</th></tr></thead>
+  <tbody>
+    <tr><td>灵液 · 天逆</td><td>菠菜</td><td>伤害 +10% / 级，满 +50%</td><td>属性 · 兼钥匙（仅火球术）</td></tr>
+    <tr><td>岁月玉简</td><td>空之书</td><td>冷却 −8% / 级，满 −40%</td><td>属性 · 全通用最强</td></tr>
+    <tr><td>避天棺</td><td>空心之心</td><td>生命上限 +20% / 级，满 +100%</td><td>属性</td></tr>
+    <tr><td>分身玉简</td><td>复制器</td><td>每件神通 +1 投射物</td><td>属性 · 破格级</td></tr>
+    <tr><td>神识罗盘</td><td>烛台</td><td>作用范围 +10% / 级，满 +50%</td><td>属性 · 兼钥匙</td></tr>
+    <tr><td>摄灵囊</td><td>磁铁</td><td>拾取范围 +30% / 级</td><td>经济</td></tr>
+    <tr><td>悟道石</td><td>皇冠</td><td>经验获取 +8% / 级，满 +40%</td><td>成长 · 兼钥匙</td></tr>
+    <tr><td>命运丝线</td><td>四叶草</td><td>幸运 +10% / 级</td><td>概率 · 兼钥匙</td></tr>
+    <tr><td>古神精血</td><td>护甲</td><td>受伤 −1 / 级；近战伤害 +8% / 级</td><td>生存 · 古神流核心</td></tr>
+    <tr><td>御剑符</td><td>护腕</td><td>投射物速度 +10% / 级</td><td>属性 · 兼钥匙</td></tr>
+    <tr><td>凝神香</td><td>咒缚</td><td>效果持续时间 +10% / 级</td><td>属性 · 兼钥匙</td></tr>
+    <tr><td>血煞球</td><td>番茄</td><td>每秒回复 +0.2 / 级</td><td>生存 · 兼钥匙</td></tr>
+    <tr><td>风翼骨</td><td>翅膀</td><td>移动速度 +10% / 级</td><td>属性 · 兼钥匙</td></tr>
+    <tr><td>万宝囊</td><td>石面具</td><td>灵石获取 +10% / 级</td><td>经济</td></tr>
+    <tr><td>引劫符</td><td>骷髅头</td><td>敌人数量与强度 +20% / 级，经验 +15% / 级</td><td>诅咒 · 主动加难度</td></tr>
+    <tr><td>轮回印</td><td>提拉米苏</td><td>死亡后原地复活 1 次</td><td>保险</td></tr>
+    <tr><td>射神车</td><td>—</td><td><b>不提供任何属性</b>：每隔 6 秒沿面朝方向冲出一辆车，穿透并推开路径上的敌人；满 5 级变 <b>三辆射神车</b>，三个方向各一辆</td><td><b>主动型</b> · 独立生效</td></tr>
+    <tr><td>定魂钉</td><td>—</td><td>控制类效果时长 +12% / 级</td><td>兼钥匙</td></tr>
+    <tr><td>尊魂幡</td><td>—</td><td><b>不提供任何固定属性</b>；按击杀数积攒「魂」层（见下节）。<b>合成道化黄泉后永久失效</b>——这一格会变成死格</td><td>成长型 · 兼钥匙 · 一次性</td></tr>
+    <tr><td>极阳命珠</td><td>银戒指</td><td>——</td><td>素材 · 法术流终局解</td></tr>
+    <tr><td>极阴命珠</td><td>金戒指</td><td>——</td><td>素材 · 法术流终局解</td></tr>
+    <tr><td>生轮玉简</td><td>Metaglio 左</td><td>——</td><td>素材 · 古神流终局解</td></tr>
+    <tr><td>死轮玉简</td><td>Metaglio 右</td><td>——</td><td>素材 · 古神流终局解</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>六、融合技与成长型进化</h3>
+<p class="lead">对应原版的双鸟融合：两件单独使用都很弱的神通合而为一，融合后<b>腾出一个神通栏</b>。取自原著，而不是通用的冰火套路。</p>
+<div class="grid2">
+  <div class="card">
+    <span class="tag t-purple">融合 · 释放一栏</span>
+    <h4>蚊兽 ＋ 尸魅 → 蚊兽尸魅潮</h4>
+    <p>两件都是「自动索敌、单独用都很薄」的兽类神通，正对应原版一白一黑的两只鸟。它们刻意被安排在<b>元婴段同段开放</b>——本作唯一一处允许「同段同几何」的例外，就是为了让玩家一进元婴就能立刻凑齐素材、当场融合。融合后化作一整片兽潮，并空出一个神通栏。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-red">带筹码的进化</span>
+    <h4>生死意境 ＋ 尊魂幡 → 道化黄泉</h4>
+    <p>王林的核心意境。生死意境是一条自脚下漫开的双相领域——半幅回血、半幅侵蚀，单用时幅度都很小。<br>它的钥匙是全场唯一需要<b>提前投资</b>的法宝：尊魂幡不带任何属性，只按击杀数积攒魂层，而<b>合成之后它自己会作废</b>。什么时候合成，本身就是一道题。</p>
+  </div>
+</div>
+
+<h3>七、尊魂幡：唯一一件「完全靠打出来、且会作废」的法宝</h3>
+<p class="lead">它占着一格法宝，却在前二十分钟几乎不提供任何收益；合成之后，那一格还会永久作废。它是全场唯一需要玩家<b>主动投资</b>的格子——也是唯一一件价值会随时间自动变厚、却又一次性用尽的物品。</p>
+<div class="formula">
+  <div class="f">持有期间：每击杀 50 个敌人 → 积累 1 层「魂」</div>
+  <div class="note">层数无上限，本局有效，但<b>不提供任何即时属性</b>。拿着尊魂幡却迟迟不合成，那一格就是纯亏损。</div>
+</div>
+<div class="formula">
+  <div class="f">合成瞬间：魂层 × 3 → 折算为道化黄泉的永久固定伤害，随后魂层清零</div>
+  <div class="note">之后道化黄泉按自己的节奏成长——每击杀 200 个敌人 +1 层，每层 +2 伤害，不再与尊魂幡的旧层数挂钩。</div>
+</div>
+<div class="formula" style="border-left-color:#c0392b;">
+  <div class="f">合成之后：尊魂幡<b>永久失效</b>——那一格退出结算，不再产生任何效果</div>
+  <div class="note">刻意为之。原版被动物品在进化后依然全程有效（进化消耗的是武器栏，被动不消耗）；本作让「钥匙」在开锁后作废，是为了把「什么时候合成」的成本做实：<b>你选的不只是伤害上限，而是「什么时候交出一格」</b>。这条规则一经触发不可逆。</div>
+</div>
+<p class="lead">这条机制的全部意义在于<b>合成时机的取舍</b>：攥着尊魂幡越久，魂层越厚、一次性折算的伤害越高；但攥着它的每一分钟，那一格都不产生任何收益。两条曲线约在 20 分钟出头交叉（按换算表约在问鼎前后），那就是最优合成窗口。</p>
+<p class="lead">而「死格」让这道题真正变锋利——空转的成本<b>随敌人密度上升</b>：前 10 分钟怪稀，少一格几乎无感；20 分钟后怪潮成片，那一格就是实打实的缺口。经验法则是：<b>另外五格能稳住场面，就一直攥到 20 分钟出头再一次性折现；一旦开始掉血，立刻合成止损。</b>它不给你「划算就永远揣着」的模糊地带——每一分钟都在收租。</p>
+<p class="lead" style="font-size:13.5px;color:var(--ink-3);">这是原版「金币发酵」（前期不捡金币、等磁铁成型再扫图）的等价设计：把一件东西的价值<b>押后兑现</b>，用前期的忍耐换后期的爆发。唯一的调节旋钮是折算倍率——若实测「死格」压力过重，把 ×3 提到 ×3.5 即可，不必动结构。</p>
+
+<h3>八、数值锚点</h3>
+<p class="lead">上一版缺了这层，照着做不出来。以下是建议值，可按手感调整。</p>
+<div class="tbl-wrap">
+<table>
+  <thead><tr><th>项目</th><th>上限</th><th>曲线</th></tr></thead>
+  <tbody>
+    <tr><td>神通重数</td><td class="mono">8 重</td><td>1 重 = 100% 伤害，每重 +14%，4 重与 8 重各跳档 ×1.15 → <b>8 重约 340%</b>（<b>古神线体术不在此列</b>，它们随境界自动成长）</td></tr>
+    <tr><td>本源神通</td><td class="mono">—</td><td>普通进化为基础 8 重的 <b>×2.2</b>；终局解（流月长河 / 古神血袍）为 <b>×2.6</b> 并附带专属效果</td></tr>
+    <tr><td>法宝等级</td><td class="mono">5 级</td><td>线性叠加，满级即表中「满」值</td></tr>
+    <tr><td>神通栏 / 法宝栏</td><td class="mono">各 6 格</td><td>第 2 / 3 / 4 / 5 / 6 格分别在 <b>16 / 21 / 31 / 61 / 71 级</b>解锁（化神期与阴虚以上不给新栏位，改给大招与属性档）</td></tr>
+    <tr><td>极境 · 开关</td><td class="mono">21–50 级／每局 3 次</td><td>结丹（21 级）开放，化神（51 级）<b>永久失效</b>。生命 &lt;30% 可手动开启：伤害 <b>×2</b>、冷却 <b>×0.5</b>；<b>开启后锁定 30 秒</b>、<b>同一局最多 3 次</b>；<b>开启期间经验与境界完全停滞</b>。对应原著「极境止于元婴」</td></tr>
+    <tr><td>尊魂幡魂层</td><td class="mono">无上限</td><td>持有期间每击杀 50 个敌人 +1 层；合成时 ×3 折算为固定伤害后清零；<b>合成后该法宝格永久失效</b>；道化黄泉自身每 200 击杀 +1 层（每层 +2 伤害）</td></tr>
+    <tr><td>古神流 · 体术</td><td class="mono">5 件</td><td>不参与升重、不吃宝匣、不需要钥匙；强度＝当前境界（凝气 1 重 → 阴虚 8 重）。基础伤害 <b>×1.6</b>，每件 ＋20% 生命上限、＋8% 减伤</td></tr>
+    <tr><td>古神流 · 洗点</td><td class="mono">1 次</td><td>入流瞬间，已投入的法术重数<b>全额折算</b>到古神之臂；<b>此后不可逆</b>，法术永久失效</td></tr>
+    <tr><td>秘境宝匣</td><td class="mono">—</td><td>10:00 后才掉落，优先结算进化；攒多件一次开可同时触发多个进化（古神流不消耗宝匣）</td></tr>
+    <tr><td>终局解 · 窗口</td><td class="mono">约 14 分钟</td><td>素材（流月 / 不灭之躯）在<b>婴变 61 级</b>登场（粗估第 16 分钟），距 30:00 天运子约 14 分钟——足够养到 8 重、凑两格素材、再等一个宝匣。这是终局解「可达」的前提条件</td></tr>
+  </tbody>
+</table>
+</div>
+
+<hr class="sep">
+
+<!-- ============ 第三部 ============ -->
+<h2><span class="num">第三部</span>五套 Build 套路</h2>
+<p class="lead">按 v2 的神通命名重写。每套都给出「核心思路 → 神通与进化 → 法宝配置 → 打法 → 优缺点」，可以直接照抄。<b>另附「成型境界」——它就是这套 build 的时钟</b>：核心神通在哪个境界开放，这套打法就要等到那一刻才真正成立，在此之前只能靠打工的几件硬撑。</p>
+
+<div class="build">
+  <header><h3>古神不死流</h3><span class="role">古神流 / 站撸 / 前 20 级的投入要作废</span></header>
+  <div class="row"><div class="k">成型境界</div><div class="v">「入古神流」在<b>结丹（21 级）</b>抉择，当场洗点并拿到古神之臂；<b>元婴（31 级）</b>补上唯一的控制，<b>化神（51 级）</b>拿到站桩资本古神裂地，<b>婴变（61 级）</b>一次拿到单点爆发与<b>不灭之躯</b>——<b>当场就能合成古神血袍</b>，终局解的窗口因此从原来只剩几分钟扩到约 14 分钟。<b>越到后期越强</b>。</div></div>
+  <div class="row"><div class="k">覆盖组合</div><div class="v">左右横扫（古神之臂）＋ 全场扫描（古神怒吼）＋ 脚下领域（古神裂地）＋ 环绕 · 护体（不灭之躯）——<b>全是贴身几何，零远程</b>。前 20 级的法术手感必须整个丢掉、重新学走位。</div></div>
+  <div class="row"><div class="k">神通</div><div class="v">五件体术，<b>不参与升重、不吃宝匣</b>，强度随境界自动成长：古神之臂　·　古神怒吼　·　古神裂地　·　古神之拳　·　不灭之躯 <span class="ev">→ 古神血袍 · 不灭体</span>（＋<span class="key">生轮玉简 ＋ 死轮玉简</span>）</div></div>
+  <div class="row"><div class="k">法宝</div><div class="v">古神精血（受伤 −1、近战 +8% / 级）　·　避天棺　·　血煞球　·　岁月玉简　·　生轮玉简 ＋ 死轮玉简<br><b>体术不占升级选项 → 六格法宝满得比任何流派都快</b>，这是古神流的真正红利。</div></div>
+  <div class="row"><div class="k">打法</div><div class="v">钻进怪最多的地方<b>站住不动</b>。古神之臂扫两侧、裂地管脚下、怒吼一开就是全屏窗口；每件体术叠生命与减伤，配合避天棺与古神精血，天运子的爆发打不穿血线。</div></div>
+  <div class="pc"><b>优点：</b>身板最厚、法宝满得最快，是「不用瞄准」的极端形态。<i>缺点：</i>零远程、没有全屏结算，清场只能靠走位把怪引到身边；<b>入流那一刻前 20 级的法术投入全部作废</b>（只有重数折到古神之臂上）；终局解要占两格法宝，因此永远拿不到流月长河。</div>
+</div>
+
+<div class="build">
+  <header><h3>一步踏天流</h3><span class="role">Boss 秒杀 / 高伤 / 高操作</span></header>
+  <div class="row"><div class="k">成型境界</div><div class="v">起手最快的一套：<b>凝气</b>就有火球术、<b>筑基（16 级）</b>拿到黄泉指，射神车转成法宝后随时可拿；但控场核心定身术被压到<b>婴变（61 级）</b>。<b>真正的「见面即死」要等到 61 级</b>，之前只能靠火球与指系自己硬顶。</div></div>
+  <div class="row"><div class="k">覆盖组合</div><div class="v">朝向直线（黄泉指）＋ 向上抛投（火球术）＋ 全场扫描（定身术）＋ 法宝主动直线（射神车）——<b>把所有伤害压在正前方一条走廊上</b>。</div></div>
+  <div class="row"><div class="k">神通</div><div class="v">黄泉指 <span class="ev">→ 黄泉寂灭指</span>（＋<span class="key">御剑符</span>）　·　火球术 <span class="ev">→ 九幽火海</span>（＋<span class="key">灵液 · 天逆</span>）　·　定身术 <span class="ev">→ 定神术</span>（＋<span class="key">定魂钉</span>）</div></div>
+  <div class="row"><div class="k">法宝</div><div class="v">射神车（主动型，满级三辆）　·　岁月玉简　·　灵液 · 天逆　·　御剑符　·　神识罗盘　·　定魂钉</div></div>
+  <div class="row"><div class="k">打法</div><div class="v">定神术先手钉住精英 → 三辆射神车沿走廊对冲 → 黄泉寂灭指零间隔连发，火球术补抛投覆盖。定身的那几秒就是全部输出窗口，空放等于白打。</div></div>
+  <div class="pc"><b>优点：</b>单点 DPS 天花板，精英与 Boss 见面即死；<b>射神车转成法宝后不再占神通栏，等于白捡一件输出</b>。<i>缺点：</i>左右横扫与脚下领域全缺，侧面 90° 是真空区；三件全为朝向／定点系，一旦被前后包夹就完全没有自保手段。容错低。</div>
+</div>
+
+<div class="build">
+  <header><h3>天罗地网流</h3><span class="role">清屏 / 视觉流 / 经验暴涨</span></header>
+  <div class="row"><div class="k">成型境界</div><div class="v">四件分居三处——因果千丝在<b>化神（51 级）</b>、雷法 · 落雷与呼风唤雨同在<b>问鼎（71 级）</b>、绝天之阵要到<b>阴虚以上（81 级）</b>。<b>完全体是五套里最晚的一套</b>，这也解释了它的招牌优点（经验暴涨）为什么总在实战后半段才兑现。</div></div>
+  <div class="row"><div class="k">覆盖组合</div><div class="v">全屏随机（雷法）＋ 地面布点（呼风唤雨）＋ 弹射反弹（因果千丝）＋ 周期结算（绝天之阵）——<b>四件都不需要瞄准，全交给概率与周期</b>。问鼎那一段会一次给你两件天象，是本套唯一的火力跳变点。</div></div>
+  <div class="row"><div class="k">神通</div><div class="v">雷法 · 落雷 <span class="ev">→ 九天神雷</span>（＋<span class="key">分身玉简</span>）　·　呼风唤雨 <span class="ev">→ 黑龙行雨</span>（＋<span class="key">摄灵囊</span>）　·　因果千丝 <span class="ev">→ 天罗地网</span>（＋<span class="key">命运丝线</span>）　·　绝天之阵 <span class="ev">→ 斩天之剑</span>（＋<span class="key">悟道石</span>）</div></div>
+  <div class="row"><div class="k">法宝</div><div class="v">分身玉简　·　摄灵囊　·　命运丝线　·　悟道石（<b>四把钥匙已吃掉四格</b>）　·　引劫符　·　神识罗盘<br>最想要却塞不进来的正是<b>岁月玉简</b>（−40% 冷却）——这套是全场栏位最紧的一副，取舍感最强。</div></div>
+  <div class="row"><div class="k">打法</div><div class="v">千丝铺网定人 → 落雷与雨幕持续覆盖 → 斩天之剑收尾。引劫符把敌人拉满，反过来放大落雷与雨洼的命中数、拉高经验收益，形成正循环。刻意贴边站位，让丝线反复反弹。</div></div>
+  <div class="pc"><b>优点：</b>清屏效率最高，等级成长最快，且是唯一整套「零瞄准」的流派。<i>缺点：</i>斩天之剑击杀的敌人<b>不掉灵石</b>（保留原版华丽月亮的取舍）；四件全是 AOE、没有一件能近身自保，必须带环绕件兜底；成型最晚，前中期要靠别的件硬撑。</div>
+</div>
+
+<div class="build">
+  <header><h3>兽潮流</h3><span class="role">挂机 / 融合 / 剑幡护身</span></header>
+  <div class="row"><div class="k">成型境界</div><div class="v"><b>核心成型最早的一套，而且是唯一一套「开局就能自保」的。</b>万剑禁幡在<b>凝气（1 级）</b>就能拿——它就是本作的「大蒜位」；元婴（31 级）尸魅与蚊兽刻意同段开放，一进元婴就能凑齐融合素材、当场融合，这是「同段同几何」那条例外的全部理由。之后腾出的栏位全部投给法宝。</div></div>
+  <div class="row"><div class="k">覆盖组合</div><div class="v">环绕自身（万剑禁幡）＋ 自动索敌（蚊兽 ＋ 尸魅）——<b>三件都不需要瞄准</b>。剑幡管贴身、兽群管清场，玩家的工作只剩走位。</div></div>
+  <div class="row"><div class="k">神通</div><div class="v">万剑禁幡 <span class="ev">→ 禁天幡</span>（＋<span class="key">凝神香</span>）　·　蚊兽 <span class="ev">→ 蚊兽潮</span>（＋<span class="key">风翼骨</span>）　·　尸魅 <span class="ev">→ 尸魅王</span>（＋<span class="key">血煞球</span>）<br>或直接走融合：<b>蚊兽 ＋ 尸魅 → 蚊兽尸魅潮</b>，腾出一格神通再补通用件。</div></div>
+  <div class="row"><div class="k">法宝</div><div class="v">风翼骨　·　血煞球　·　凝神香　·　摄灵囊　·　岁月玉简　·　万宝囊</div></div>
+  <div class="row"><div class="k">打法</div><div class="v">剑幡贴身护住、兽群自动清场，不主动打怪。走位优先级高于一切——因为三件输出都不需要你瞄准。</div></div>
+  <div class="pc"><b>优点：</b>操作压力最低，核心成型最早（元婴即可融合），且万剑禁幡正好补上它唯一的短板——融合前那段没有自保能力的空窗。<i>缺点：</i>缺乏瞬间爆发，遇到高血精英会拖时间；融合前两根兽类神通单用仍然很薄。</div>
+</div>
+
+<div class="build">
+  <header><h3>黄泉成长流</h3><span class="role">投资 / 长线 / 唯一一套主动延迟变强的流派</span></header>
+  <div class="row"><div class="k">成型境界</div><div class="v">尊魂幡是法宝、早期就能拿到，但钥匙锁在<b>化神（51 级）</b>——生死意境只在那一段开放。于是<b>投资期被天然框成「拿到尊魂幡 → 化神」这一段</b>：既不会太早、太早也暴毙，也不会拖到毫无意义；合成窗口就落在 51 级之后的第一个怪潮峰值。</div></div>
+  <div class="row"><div class="k">覆盖组合</div><div class="v">脚下领域（生死意境 → 道化黄泉）＋ 环绕（万剑禁幡）＋ 朝向扇形（焚界古伞）——<b>以自身为圆心的三层领域</b>，站桩收益最高。</div></div>
+  <div class="row"><div class="k">神通</div><div class="v">生死意境 <span class="ev">→ 道化黄泉</span>（＋<span class="key">尊魂幡</span>）　·　万剑禁幡 <span class="ev">→ 禁天幡</span>（＋<span class="key">凝神香</span>）　·　焚界古伞 <span class="ev">→ 焚天九重伞</span>（＋<span class="key">凝神香</span>）</div></div>
+  <div class="row"><div class="k">法宝</div><div class="v">尊魂幡（必备；<b>合成后永久失效</b>，后半局只剩 5 格）　·　岁月玉简　·　凝神香（<b>同时是万剑禁幡与焚界古伞两把钥匙——一格顶两用</b>）　·　血煞球　·　摄灵囊　·　末位留一格机动（抓神识罗盘或素材）</div></div>
+  <div class="row"><div class="k">关键操作</div><div class="v"><b>刻意不合成</b>。前期宁可揣着没属性的尊魂幡、靠另外两件神通打工，也要把魂层压到 20 分钟出头再一次性折现——全流派里唯一一个「主动推迟变强」的决策。<b>但死格不可逆</b>：进 20 分钟前必须先确认后 10 分钟靠 5 格能活，否则宁可提前合成止损。</div></div>
+  <div class="row"><div class="k">打法</div><div class="v">贴怪站桩，让生死意境的领域持续覆盖；20 分钟出头合成道化黄泉，一次性拿到巨额固定伤害，随后靠领域自愈与新成的禁天幡滚雪球。</div></div>
+  <div class="pc"><b>优点：</b>道化黄泉成型后伤害上限全流派最高，且同时具备清场与自愈。<i>缺点：</i>前 20 分钟等于白少一个法宝格，<b>合成后那一格还会永久作废</b>，后半局只有 5 格法宝可用——容错全流派最低；拖延失败直接崩盘，且拿不到其他终局解。</div>
+</div>
+
+<hr class="sep">
+
+<!-- ============ 第四部 ============ -->
+<h2><span class="num">第四部</span>只属于《仙逆》的机制</h2>
+<p class="lead">这几条不是照搬，而是从原著里挖出来、刚好能变成玩法的设定。它们让这版有了原版没有的决策深度。</p>
+
+<div class="grid2">
+  <div class="card">
+    <span class="tag t-red">限时开关 · 结丹解锁</span>
+    <h4>极境</h4>
+    <p><b>结丹（21 级）开放，踏入化神（51 级）后永久失效。</b>生命低于 30% 时可手动开启：<b>伤害 ×2、冷却 ×0.5</b>，但开启期间<b>经验与境界完全停滞</b>——也就是升级彻底停摆。<br><b>开启后至少锁定 30 秒，且同一局最多开启 3 次。</b>这两条约束是必须的：如果它能被随手开关，「危险时开、安全时关」就等于零成本，这道取舍题也就不成立了。锁 30 秒意味着你必须提前判断「这一波怪潮值不值得用掉一发」——它是一局只有三发、每发三十秒的弹药。<br>这正是原著那条设定：「极境同阶无敌，却一生难入化神」。王林的极境止于元婴，游戏里就表现为「一开就卡住、一进化神就没有了」。所以它是一个<b>带截止日期的开关</b>，而 21–50 级这一段就是它全部的窗口。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-gold">主动加难度</span>
+    <h4>天劫</h4>
+    <p>每 10 级（一次大境界圆满）触发一波天劫敌人潮，敌人强化三倍、经验翻倍。玩家也可以提前<b>主动引劫</b>来加速成长——引劫符就是把这件事做成了可购买的选项。<br>这是对原版「诅咒」系统的性格化处理：逆修者对抗的就是天道本身。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-blue">续命底牌</span>
+    <h4>天逆珠 · 时间加速</h4>
+    <p>拾取天逆珠后可发动一次：全场时间流速降至 30%，自己保持正常。<br>来源就是原著里天逆珠内部时间加速的设定，用作一次脱困／抢宝匣的底牌，冷却较长。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-purple">终极神通</span>
+    <h4>梦道 · 一梦万古</h4>
+    <p>化神期（51 级）解锁，<b>不占神通栏</b>，每局只能施展一次：编织多层虚实梦境，全场敌人自相残杀，并推演出一段额外的掉落。<br>上一版把它做成了「清屏吸经验的武器」，那是降格——王林自创的最强神通，应该是压箱底的大招，而不是农具。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-jade">成长曲线</span>
+    <h4>吞魂</h4>
+    <p>击杀敌人有概率掉落「魂」，拾取后恢复少量生命，并<b>永久 +0.05% 伤害</b>，可无限叠加。<br>把「王林吞魂成长」的设定变成一条缓慢但确定的成长曲线，鼓励玩家多杀而不只是躲。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-purple">长期目标</span>
+    <h4>五行认主</h4>
+    <p>地图上随机刷新五个秘境（金木水火土）。每认主一次全属性 +5%；集齐五行后天逆珠进入二次圆满。<br>对应原著中天逆珠吸收五行元素认主的过程，给一局游戏一个长期目标。</p>
+  </div>
+  <div class="card">
+    <span class="tag t-red">终局解</span>
+    <h4>天运子 · 天道化身</h4>
+    <p>30:00 降临，血量不可正常清空。<b>两条路径各有一个完整解</b>：<br>· <b>法术流</b>——<b>流月长河</b>（周期性剥夺其半数修为）＋ 一条生存线（避天棺 ＋ 血煞球 ＋ 岁月玉简）；<br>· <b>古神流</b>——<b>古神血袍 · 不灭体</b>（单次受击上限压到 10，同时扛住爆发与持续）。<br>扛满 5 分钟即通关。这与原版不同：原版是「无限走廊 ＋ 深红斗篷」两件拼成<b>一个</b>解；本作因为两条路径互斥，改成<b>每条路各有一件专属终局解</b>——所以你在结丹那一步选的其实不是一件装备，而是这五分钟的过法。另注：两件终局解各需两格法宝素材，凑齐本身就要占掉大半个法宝栏，取舍仍然成立。</p>
+  </div>
+</div>
+
+<hr class="sep">
+
+<!-- ============ 第五部 ============ -->
+<h2><span class="num">第五部</span>怪物设计（已拆分为独立文档）</h2>
+<p class="lead">原版的决策其实由<b>两面</b>共同制造：武器有覆盖形状，敌人有逼近形状，两者错开的地方才是盲区。<b>所以怪物设计不是配菜，它和武器设计是同一枚硬币的两面</b>——如果全场怪物只会直线冲脸，十四类神通立刻退化成一道「谁数字大」的算术题。</p>
+<p class="lead">这一部的内容已经相当厚（对偶表、六个原型、境界刷怪表、八种机制怪、精英与秘境守、三条抗性、数值锚点，以及一张完整的怪物图鉴速查）。继续挂在 Build 设计书里，会让主线读起来失重，所以它已拆成一份独立文档：</p>
+<div class="card">
+  <span class="tag t-blue">配套文档</span>
+  <h4>《仙逆幸存者 · 怪物设计》</h4>
+  <p>妖兽 · 修士 · 天道 —— 敌方逼近几何与我方覆盖几何的<b>对偶表</b>、六个原型与境界刷怪表、八种机制怪、精英／秘境守／伪宝匣、三条抗性与「同一只精英最多两抗」的硬约束、数值锚点与对齐背离表，以及一张按境界段排序的怪物图鉴速查。</p>
+</div>
+<p class="lead">留在这里的只有一条结论，因为它同时属于武器侧：<b>「HP × 玩家境界」与极境撞出了本作的压级打法</b>——极境冻结境界，敌人也被冻在低档，「伤害 ×2」于是变成净赚。这正是原版死神关卡「压级 ＋ 爆发」的同一招，也是极境从一个孤立开关升级成一套完整打法的原因。</p>
+<div class="principle">
+  <b>设计铁律六（怪物侧）</b><br>
+  <b>敌人必须出题，而不是送经验</b>——每个原型的逼近形状都要与武器的覆盖形状错开：错开的地方就是盲区，有盲区才有站位决策。删掉任何一个原型之后如果玩法毫无变化，它就不该存在。
+</div>
+
+<hr class="sep">
+
+<!-- ============ 第六部 ============ -->
+<h2><span class="num">第六部</span>实战细节</h2>
+<ul class="plain">
+  <li><b>先看盲区，再谈输出</b>：v2 的神通各有形状，开局第一件事是检查自己的覆盖组合留了哪个方向的盲区——左右横扫的玩家怕前后，抛投的玩家怕贴脸，朝向系的玩家怕背身。</li>
+  <li><b>再看敌人是怎么来的</b>：盲区不是抽象的，它会被某一类怪精准地找到。<b>结丹段（约第 4 分钟）开始刷阴魂（穿墙）</b>，「往空地跑」第一次失效，这一段全靠你在 1 级就拿到的万剑禁幡那一圈顶着；<b>元婴段的石傀走得慢，但它撞上来的那一下足够送你回洞府</b>——所以无论多偏爱 AOE，单点输出都不能全砍。</li>
+  <li><b>引劫要看段位</b>：天劫不换主怪，只把当前段的数量与强度一起拉高。所以<b>把它引在群怪段是赚</b>（数量本来就是经验来源），<b>引在坦克段是找死</b>——你会同时得到更多、也更硬的石傀。</li>
+  <li><b>追命者不能磨</b>：它每受到一次伤害就加速一档，边跑边刮等于替自己养一只越来越快的鬼。要么用引力术先钉住、等它滑进光柱一口气打死，要么一开始就绕开它。</li>
+  <li><b>引力术是给别的神通打工的</b>：它自己几乎不造成伤害，价值全在「先把敌人拖到一点或身边」。「向心聚拢 ＋ 朝向直线」是前期最省事的一对——聚拢完再一指贯穿。</li>
+  <li><b>入古神流是最重的一个决定</b>：它把前 20 级的法术投入一次性作废（重数会洗点折到古神之臂，但手感要重新学）。判断标准很直白——如果你已经习惯「先拉开距离」，就别入；如果你本能地想往怪堆里钻，古神流反而更顺。注意<b>它不可逆</b>。</li>
+  <li><b>古神流别去凑宝匣</b>：体术不吃宝匣，所以 10 分钟后掉落的秘境宝匣对你只值金币。这份「省下来的升级选项」就是古神流的红利——优先把岁月玉简、避天棺、古神精血堆满。</li>
+  <li><b>灵石发酵</b>：前期别急着捡灵石。等摄灵囊＋万宝囊成型再回头扫图，收益接近翻倍。</li>
+  <li><b>迎怪而上</b>：别往没怪的地方跑。怪越多经验越多、进化越快——想加速就配引劫符主动引天劫。</li>
+  <li><b>攒着开宝匣</b>：秘境宝匣永远优先结算进化。手上有多个条件满足时，攒着一次开三件匣，可以一口气跳三个本源神通。</li>
+  <li><b>六格法宝要敢弃</b>：优先保留岁月玉简、灵液·天逆、分身玉简、摄灵囊、神识罗盘这类通用件；素材类法宝只在确定要冲哪件终局解时才占格。</li>
+  <li><b>极境是有限期的开关，不是天赋</b>：<b>结丹（21 级）开放、化神（51 级）永久关闭</b>。想快速清场就开，想突破境界（换档升级）就必须关。<b>但每次开启至少锁 30 秒、全局只有 3 次</b>，所以别再想「随手开关」——它是一局三发、每发三十秒的弹药，专门留给真正扛不住的怪潮。窗口只有 21–50 级这一段，别等化神前才想起来用。另注意<b>它与古神流互相拆台</b>：古神流的体术强度完全绑定境界，而极境冻结境界。</li>
+  <li><b>极境其实是一套打法，不是一个开关</b>：怪物血量随你的境界同涨，所以极境冻结境界的同时，也把敌人一起冻在了低档——这正是原版死神关卡「<b>压级 + 爆发</b>」的同一招。它<b>只对「靠强度压制你」的怪有效</b>（坦克、精英、凶兽），对「靠数量压制你」的怪完全无用（群怪、自爆），因为群怪从来不看你几级。开极境之前，先看一眼场上到底是哪一种在推你。</li>
+  <li><b>大范围件都堆在后半场</b>：呼风唤雨在<b>问鼎（71 级）</b>与雷法 · 落雷同段登场——问鼎是唯一一次「一次给两件天象」的段落，也是全场火力最陡的一跳。但要分清它的类别：<b>它是 AOE（随机落点的伤害水洼），不是兽群那类自动索敌</b>，归属是「天罗地网流」那一挂，别塞进挂机流里去。</li>
+  <li><b>终局解的分岔在结丹就已决定</b>：流月长河归法术流、古神血袍归古神流，各需两格法宝。所以你真正要做的决断不是「选哪件终局解」，而是<b>入不入古神流</b>——那一步之后，终局解就只剩下一个可能。这也是为什么洗点只给一次。</li>
+  <li><b>尊魂幡不是属性件，是筹码</b>：它占格不给属性，全部价值都在合成那一刻兑现，而<b>合成之后那一格就永久作废</b>。如果你揣着它却发现自己撑不到 20 分钟，那是判断失误——要么提前合成止损（放弃部分折现，保住五格中的活格不再空转），要么一开始就别走黄泉线。</li>
+  <li><b>死格要在合成前算清</b>：尊魂幡作废是<b>不可逆</b>的，所以合成前那一刻就是本局最重的决策点。判断标准很直白——若另外五格法宝已经能稳住场面，就继续攥；开始掉血就立刻合成。选择黄泉流的玩家，从第 10 分钟起就该按「后半局只有 5 格法宝」来配装。</li>
+  <li><b>每段只开 1–3 件，别指望「等更好的」</b>：神通池按境界放行，凝气 3 件、筑基 2 件，而<b>结丹一件都不开</b>（它只给两扇门）。这意味着<b>想养的东西一定要在本段就拿</b>——等到化神、问鼎再回头补，池子已经变宽，升级选项被稀释，想堆到 8 重就难了。前期池窄不是限制，是红利。</li>
+  <li><b>把境界换算成分钟来想问题</b>：结丹约第 4 分钟、化神约第 12 分钟、婴变约第 16 分钟、阴虚以上约第 22–25 分钟（换算表见第二部 §一）。所有「什么时候该做什么」的判断都该用分钟来算，境界只是它的刻度——比如「尊魂幡攥到 20 分钟」和「钥匙锁在化神」其实是同一件事。</li>
+  <li><b>境界是时钟，不是门槛</b>：进化本身不看境界，只看「满 8 重 ＋ 钥匙 ＋ 宝匣」。所以低阶神通完全值得早拿、早养——凝气期的火球术到问鼎期照样能进化成九幽火海。<b>反过来，晚境界才开放的神通（如雷法 · 落雷、绝天之阵）天生就只能当收尾件</b>，别指望它们救前中期。</li>
+</ul>
+
+<footer>
+  <p><b>说明</b>：上半部分的机制与套路整理自公开的中英文攻略与社区讨论；下半部分是基于《仙逆》（耳根）原著设定的二创移植设计，非官方内容，数值均为可调整的设计建议。</p>
+  <p>核心移植准则：<b>骨架不动，外壳全换，但外壳必须自带信息</b>——栏位经济、进化三条件、时间节奏照搬；覆盖几何、同源配对、法宝系统则要让玩法本身从名字里长出来。</p>
+</footer>
+
+</div>
+</body>
+</html>

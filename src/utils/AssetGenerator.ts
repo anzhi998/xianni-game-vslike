@@ -5,6 +5,9 @@
  */
 
 import Phaser from 'phaser';
+import { ARTIFACTS, ARTIFACT_IDS } from '../config/ArtifactConfig';
+import { ENEMIES } from '../config/EnemyConfig';
+import type { EnemyConfig, EnemyArchetype } from '../types';
 
 export function generateAllAssets(scene: Phaser.Scene): void {
   generateTiles(scene);
@@ -123,81 +126,199 @@ function generatePlayer(scene: Phaser.Scene): void {
 }
 
 /**
- * 敌人形状。普通与精英共用同一套绘制,只换配色 ——
- * 抽出来是为了避免把三个怪物的画法复制两遍。
+ * 敌人形状 —— 按「原型」参数化绘制,配色由 EnemyConfig 提供
+ *
+ * 十二只具名怪不可能每只都手绘一张。它们本来就只分六种原型 + 两种特殊体型,
+ * 所以画法按 `archetype` 分八套,同一套里换配色即可 ——
+ * 与 generateRealmProjectiles 是同一个思路:形状读「原型」,颜色读数据表。
+ * 加一只怪 = 在 ENEMIES 里加一行,这里一行都不用动。
  */
-type EnemyKind = 'bat' | 'skeleton' | 'wraith';
+interface Palette { body: number; dark: number; accent: number; }
 
-const ENEMY_SIZE: Record<EnemyKind, { w: number; h: number }> = {
-  bat: { w: 16, h: 16 },
-  skeleton: { w: 16, h: 20 },
-  wraith: { w: 18, h: 22 },
-};
+/** 把颜色往白里提亮(0 = 原色,1 = 纯白) */
+function brighten(color: number, t: number): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const mix = (v: number) => Math.round(v + (255 - v) * t);
+  return (mix(r) << 16) | (mix(g) << 8) | mix(b);
+}
 
-/** elite=true 时用更饱和的「妖气」配色 */
-const ELITE_PALETTE = {
-  bat: { body: 0xff44ff, dark: 0xaa22aa, wing: 0xdd55ee },
-  skeleton: { body: 0xfff0c0, dark: 0xd8c090, spine: 0xffaa44 },
-  wraith: { body: 0xff8888, dark: 0xcc4444, spine: 0xff6666 },
-};
+/** 贴图尺寸由碰撞直径推导(碰撞圆用 cfg.size,贴图比它大一圈免得撞上了还看着没碰到) */
+function enemyTextureSize(cfg: EnemyConfig): { w: number; h: number } {
+  const s = cfg.size;
+  switch (cfg.archetype) {
+    case 'spawnling': return { w: Math.round(s * 1.6), h: Math.round(s * 1.0) };
+    case 'caster': return { w: Math.round(s * 1.1), h: Math.round(s * 1.5) };
+    case 'soul': return { w: Math.round(s * 1.3), h: Math.round(s * 1.5) };
+    case 'beast': return { w: Math.round(s * 1.5), h: Math.round(s * 1.2) };
+    case 'tank': return { w: Math.round(s * 1.3), h: Math.round(s * 1.3) };
+    case 'bomber': return { w: Math.round(s * 1.3), h: Math.round(s * 1.3) };
+    case 'stalker': return { w: Math.round(s * 1.2), h: Math.round(s * 1.4) };
+    default: return { w: Math.round(s * 1.2), h: Math.round(s * 1.3) };
+  }
+}
 
-function drawEnemyShape(g: Phaser.GameObjects.Graphics, kind: EnemyKind, elite: boolean): void {
-  if (kind === 'bat') {
-    const c = elite ? ELITE_PALETTE.bat : { body: 0x9a4aaa, dark: 0x6a2a7a, wing: 0x7a3a8a };
-    g.fillStyle(c.wing, 1);
-    g.fillRect(1, 5, 5, 3);
-    g.fillRect(10, 5, 5, 3);
-    g.fillStyle(c.body, 1);
-    g.fillRect(6, 6, 4, 6);
-    g.fillStyle(c.dark, 1);
-    g.fillRect(7, 7, 2, 4);
-    g.fillStyle(elite ? 0xffee00 : 0xff3333, 1);
-    g.fillRect(7, 7, 1, 1);
-    g.fillRect(9, 7, 1, 1);
-  } else if (kind === 'skeleton') {
-    const c = elite ? ELITE_PALETTE.skeleton : { body: 0xeaeaea, dark: 0x000000, spine: 0xcacaca };
-    g.fillStyle(c.body, 1);
-    g.fillRect(4, 1, 8, 7);      // 头骨
-    g.fillStyle(c.dark, 1);
-    g.fillRect(5, 3, 2, 2);
-    g.fillRect(9, 3, 2, 2);
-    g.fillRect(7, 6, 2, 1);
-    g.fillStyle(elite ? 0xffee00 : 0xcacaca, 1);
-    g.fillRect(5, 8, 6, 8);      // 身体
-    g.fillStyle(c.spine, 1);
-    g.fillRect(7, 9, 2, 6);
-    g.fillStyle(elite ? 0xffee00 : 0xcacaca, 1);
-    g.fillRect(5, 16, 2, 4);
-    g.fillRect(9, 16, 2, 4);
-  } else {
-    const c = elite ? ELITE_PALETTE.wraith : { body: 0xaaccff, dark: 0x000000, spine: 0xaaccff };
-    g.fillStyle(c.body, elite ? 0.95 : 0.85);
-    g.fillRect(3, 2, 12, 14);
-    g.fillCircle(9, 8, 8);
-    g.fillStyle(c.body, 0.7);
-    g.fillRect(3, 14, 12, 4);
-    g.fillStyle(c.body, 0.6);
-    g.fillRect(4, 17, 3, 3);
-    g.fillRect(8, 17, 2, 4);
-    g.fillRect(11, 17, 3, 3);
-    g.fillStyle(elite ? 0xffee00 : 0x000000, 1);
-    g.fillRect(5, 6, 2, 2);
-    g.fillRect(11, 6, 2, 2);
+function drawEnemyShape(
+  g: Phaser.GameObjects.Graphics,
+  shape: EnemyArchetype,
+  w: number,
+  h: number,
+  c: Palette,
+): void {
+  const r = Math.round;
+  switch (shape) {
+    // 群怪:四足小兽(山野妖兽 / 腐尸)。矮、宽,一眼是「多而弱」
+    case 'horde': {
+      g.fillStyle(c.dark, 1);
+      g.fillRect(r(w * 0.22), r(h * 0.66), r(w * 0.16), r(h * 0.3));
+      g.fillRect(r(w * 0.6), r(h * 0.66), r(w * 0.16), r(h * 0.3));
+      g.fillStyle(c.body, 1);
+      g.fillRect(r(w * 0.18), r(h * 0.34), r(w * 0.56), r(h * 0.36)); // 躯干
+      g.fillRect(r(w * 0.64), r(h * 0.26), r(w * 0.3), r(h * 0.34));  // 头
+      g.fillStyle(c.accent, 1);
+      g.fillRect(r(w * 0.66), r(h * 0.14), r(w * 0.08), r(h * 0.14)); // 耳
+      g.fillRect(r(w * 0.82), r(h * 0.14), r(w * 0.08), r(h * 0.14));
+      g.fillStyle(0xff3333, 1);
+      g.fillRect(r(w * 0.76), r(h * 0.36), 2, 2); // 眼
+      return;
+    }
+
+    // 坦克:甲壳块(石傀 / 铁甲兽)。方、厚,没有脖子 —— 不说「快」
+    case 'tank': {
+      g.fillStyle(c.dark, 1);
+      g.fillRect(r(w * 0.12), r(h * 0.62), r(w * 0.76), r(h * 0.32));
+      g.fillStyle(c.body, 1);
+      g.fillRect(r(w * 0.16), r(h * 0.2), r(w * 0.68), r(h * 0.48));
+      g.fillStyle(c.accent, 1);
+      g.fillRect(r(w * 0.2), r(h * 0.28), r(w * 0.6), r(h * 0.08)); // 甲片
+      g.fillRect(r(w * 0.2), r(h * 0.46), r(w * 0.6), r(h * 0.08));
+      g.fillStyle(0xff5522, 1);
+      g.fillRect(r(w * 0.34), r(h * 0.36), 3, 2); // 眼
+      g.fillRect(r(w * 0.6), r(h * 0.36), 3, 2);
+      return;
+    }
+
+    // 术修:袍 + 冠 + 法杖(散修 / 魔道修士)。细高,站在远处
+    case 'caster': {
+      g.fillStyle(c.dark, 1);
+      g.fillRect(r(w * 0.12), r(h * 0.12), 2, r(h * 0.8));           // 法杖
+      g.fillStyle(c.accent, 1);
+      g.fillRect(r(w * 0.06), r(h * 0.08), 4, 4);                    // 杖顶灵光
+      g.fillStyle(c.body, 1);
+      g.fillRect(r(w * 0.28), r(h * 0.3), r(w * 0.48), r(h * 0.62)); // 袍(下宽上窄)
+      g.fillRect(r(w * 0.36), r(h * 0.16), r(w * 0.32), r(h * 0.2)); // 头
+      g.fillStyle(c.accent, 1);
+      g.fillRect(r(w * 0.32), r(h * 0.1), r(w * 0.4), r(h * 0.08));  // 冠
+      g.fillStyle(0x111133, 1);
+      g.fillRect(r(w * 0.42), r(h * 0.24), 2, 2);
+      g.fillRect(r(w * 0.56), r(h * 0.24), 2, 2);
+      return;
+    }
+
+    // 潜行:幽体(阴魂 / 尸修)。没有腿,下摆渐隐 —— 「不受地形约束」的视觉语言
+    case 'stalker': {
+      g.fillStyle(c.body, 0.85);
+      g.fillCircle(r(w * 0.5), r(h * 0.36), r(w * 0.32));
+      g.fillRect(r(w * 0.2), r(h * 0.34), r(w * 0.6), r(h * 0.42));
+      g.fillStyle(c.body, 0.55);
+      g.fillRect(r(w * 0.24), r(h * 0.74), r(w * 0.52), r(h * 0.14));
+      g.fillStyle(c.body, 0.3);
+      g.fillRect(r(w * 0.32), r(h * 0.86), r(w * 0.36), r(h * 0.1));
+      g.fillStyle(c.dark, 1);
+      g.fillRect(r(w * 0.36), r(h * 0.3), 3, 3); // 空洞的眼
+      g.fillRect(r(w * 0.56), r(h * 0.3), 3, 3);
+      return;
+    }
+
+    // 自爆:火核 + 外焰(火灵)。圆得可疑,再加一圈尖角
+    case 'bomber': {
+      g.fillStyle(c.accent, 0.7);
+      g.fillCircle(r(w * 0.5), r(h * 0.5), r(w * 0.48));
+      g.fillStyle(c.body, 1);
+      g.fillCircle(r(w * 0.5), r(h * 0.5), r(w * 0.32));
+      g.fillStyle(brighten(c.body, 0.6), 1);
+      g.fillCircle(r(w * 0.5), r(h * 0.5), r(w * 0.16));
+      return;
+    }
+
+    // 衍体:节肢虫(蛊虫)。横着的三段体节
+    case 'spawnling': {
+      g.fillStyle(c.dark, 1);
+      for (let i = 0; i < 3; i++) {
+        g.fillRect(r(w * (0.12 + i * 0.26)), r(h * 0.7), 2, r(h * 0.28)); // 足
+      }
+      g.fillStyle(c.body, 1);
+      g.fillCircle(r(w * 0.22), r(h * 0.5), r(h * 0.26));
+      g.fillCircle(r(w * 0.48), r(h * 0.46), r(h * 0.3));
+      g.fillCircle(r(w * 0.74), r(h * 0.42), r(h * 0.28));
+      g.fillStyle(c.accent, 1);
+      g.fillCircle(r(w * 0.86), r(h * 0.34), r(h * 0.2)); // 头
+      g.fillStyle(0x111111, 1);
+      g.fillRect(r(w * 0.88), r(h * 0.3), 2, 2);
+      return;
+    }
+
+    // 高危单体:带角巨兽(上古凶兽)。大、低,角是它唯一的辨识点
+    case 'beast': {
+      g.fillStyle(c.dark, 1);
+      g.fillRect(r(w * 0.14), r(h * 0.6), r(w * 0.16), r(h * 0.36));
+      g.fillRect(r(w * 0.6), r(h * 0.6), r(w * 0.18), r(h * 0.36));
+      g.fillStyle(c.body, 1);
+      g.fillRect(r(w * 0.1), r(h * 0.32), r(w * 0.68), r(h * 0.36)); // 躯干
+      g.fillRect(r(w * 0.66), r(h * 0.2), r(w * 0.28), r(h * 0.36)); // 头
+      g.fillStyle(c.accent, 1);
+      g.fillTriangle(r(w * 0.68), r(h * 0.2), r(w * 0.72), r(h * 0.2), r(w * 0.66), r(h * 0.02)); // 双角
+      g.fillTriangle(r(w * 0.84), r(h * 0.2), r(w * 0.9), r(h * 0.2), r(w * 0.92), r(h * 0.02));
+      g.fillStyle(0xffcc00, 1);
+      g.fillRect(r(w * 0.8), r(h * 0.32), 3, 2); // 眼
+      return;
+    }
+
+    // 终局:界外之魂。大幽体 + 面具
+    case 'soul': {
+      g.fillStyle(c.body, 0.8);
+      g.fillCircle(r(w * 0.5), r(h * 0.34), r(w * 0.36));
+      g.fillRect(r(w * 0.14), r(h * 0.32), r(w * 0.72), r(h * 0.44));
+      g.fillStyle(c.body, 0.45);
+      g.fillRect(r(w * 0.2), r(h * 0.76), r(w * 0.6), r(h * 0.12));
+      g.fillStyle(c.body, 0.25);
+      g.fillRect(r(w * 0.3), r(h * 0.88), r(w * 0.4), r(h * 0.1));
+      g.fillStyle(c.accent, 1);
+      g.fillRect(r(w * 0.3), r(h * 0.22), r(w * 0.4), r(h * 0.2)); // 面具
+      g.fillStyle(0x140a20, 1);
+      g.fillRect(r(w * 0.36), r(h * 0.28), 3, 3);
+      g.fillRect(r(w * 0.58), r(h * 0.28), 3, 3);
+      return;
+    }
   }
 }
 
 function generateEnemies(scene: Phaser.Scene): void {
-  // 普通敌人 + 精英变体(同形状,换配色)
-  (['bat', 'skeleton', 'wraith'] as EnemyKind[]).forEach((kind) => {
-    const { w, h } = ENEMY_SIZE[kind];
-    makeTexture(scene, `enemy_${kind}`, w, h, (g) => drawEnemyShape(g, kind, false));
-    makeTexture(scene, `elite_${kind}`, w, h, (g) => {
-      drawEnemyShape(g, kind, true);
-      // 精英外圈描边,让玩家在混战里一眼分辨
+  // 遍历数据表自动出图 —— 加怪只需改 EnemyConfig
+  for (const id of Object.keys(ENEMIES)) {
+    const cfg = ENEMIES[id];
+    const { w, h } = enemyTextureSize(cfg);
+    const body = cfg.color;
+    const dark = cfg.bodyColor;
+    const accent = brighten(cfg.color, 0.45);
+
+    makeTexture(scene, `enemy_${id}`, w, h, (g) => {
+      drawEnemyShape(g, cfg.archetype, w, h, { body, dark, accent });
+    });
+
+    makeTexture(scene, `elite_${id}`, w, h, (g) => {
+      // 精英 = 同阶修士:同形状、整体提亮、描金边。
+      // 混战里「哪只是精英」必须一秒可辨,这比它长什么样重要
+      drawEnemyShape(g, cfg.archetype, w, h, {
+        body: brighten(body, 0.35),
+        dark: brighten(dark, 0.3),
+        accent: 0xffee00,
+      });
       g.lineStyle(1, 0xffcc44, 1);
       g.strokeRect(0.5, 0.5, w - 1, h - 1);
     });
-  });
+  }
 }
 
 function generateProjectiles(scene: Phaser.Scene): void {
@@ -217,6 +338,40 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillRect(0, 2, 2, 2);
   });
 
+  // 火球:红色弹丸。专用一张而不是复用 proj_magic(那是紫色的灵气弹)——
+  // 法宝图标与弹体用同一套配色,玩家看到红色就该预期它是火。
+  // ⚠️ 内芯必须留在红里:原先的橙芯 0xff7733 + 黄芯 0xffe088 在 14px 下
+  // 连外圈的红光一起被读成橙色。提亮只做「更亮的红」,不跨到黄。
+  makeTexture(scene, 'proj_fireball', 14, 14, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0xff2200, 0.45 - i * 0.1);
+      g.fillCircle(7, 7, 7 - i * 2);
+    }
+    g.fillStyle(0xdd1100, 1);
+    g.fillCircle(7, 7, 4);
+    g.fillStyle(0xff5533, 1);
+    g.fillCircle(6, 6, 2);
+  });
+
+  // 九幽火海:火球术的进化弹。
+  //
+  // 它是**看得见的进化** —— 所以比火球大一圈(16 vs 14)、外面裹一层暗红的血焰,
+  // 内芯留一点白热的业火。进化形态的弹体曾经直接借用 proj_magic(紫色的灵气弹),
+  // 结果「九幽火海」飞出去是一颗紫色光球 —— 配色是玩家判断法术归属的唯一线索,
+  // 一个火系神通的弹体不能长成灵气弹的样子
+  makeTexture(scene, 'proj_nine_nether_fire', 16, 16, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x550011, 0.5 - i * 0.1);
+      g.fillCircle(8, 8, 8 - i * 2);
+    }
+    g.fillStyle(0xbb1a00, 1);
+    g.fillCircle(8, 8, 5);
+    g.fillStyle(0xff4422, 1);
+    g.fillCircle(7, 7, 3);
+    g.fillStyle(0xffaa77, 1);
+    g.fillCircle(7, 7, 1.5);
+  });
+
   // 灵气弹
   makeTexture(scene, 'proj_magic', 14, 14, (g) => {
     for (let i = 0; i < 3; i++) {
@@ -227,21 +382,20 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillCircle(7, 7, 2);
   });
 
-  // 回旋斧投射物(朝向 +X 轴)
-  makeTexture(scene, 'proj_axe', 14, 14, (g) => {
-    // 斧刃(上)
-    g.fillStyle(0xff8844, 1);
-    g.fillTriangle(12, 7, 4, 2, 4, 6);
-    // 斧刃(下)
-    g.fillTriangle(12, 7, 4, 8, 4, 12);
-    // 斧柄
-    g.fillStyle(0x6a3a1a, 1);
-    g.fillRect(0, 6, 6, 2);
-    // 金属高光
-    g.fillStyle(0xffcc88, 1);
-    g.fillRect(8, 3, 2, 1);
-    g.fillRect(8, 10, 2, 1);
+  // 敌方弹丸(术修)。暗红发紫 —— 与玩家侧的红色火球/紫色灵气弹都拉开,
+  // 混战时「这发是打我的」必须一眼可辨
+  makeTexture(scene, 'proj_enemy_shot', 10, 10, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x882244, 0.45 - i * 0.12);
+      g.fillCircle(5, 5, 5 - i * 1.4);
+    }
+    g.fillStyle(0xdd4466, 1);
+    g.fillCircle(5, 5, 2.4);
+    g.fillStyle(0xffccdd, 1);
+    g.fillCircle(4, 4, 1);
   });
+
+  // 回旋斧投射物(朝向 +X 轴)
 
   // 攻击命中粒子
   makeTexture(scene, 'fx_hit', 16, 16, (g) => {
@@ -273,41 +427,46 @@ function generateRealmProjectiles(scene: Phaser.Scene): void {
       g.fillCircle(cx - 1, cy - 1, 1.2);
     });
 
-  /** 刃形:细长三角,朝 +X */
-  const blade = (key: string, color: number, w = 16, h = 8) =>
-    makeTexture(scene, key, w, h, (g) => {
-      g.fillStyle(color, 0.25);
-      g.fillTriangle(w, h / 2, 0, 0, 0, h);
-      g.fillStyle(color, 1);
-      g.fillTriangle(w - 2, h / 2, 1, 2, 1, h - 2);
-      g.fillStyle(0xffffff, 0.85);
-      g.fillRect(3, h / 2 - 1, w - 6, 1);
-    });
-
   // 筑基
   orb('proj_sword_array', 0x88ddff, 10, 10);
-  blade('proj_frost_needle', 0xaaccff, 16, 7);
-  orb('proj_fire_wheel', 0xff6633, 16, 16);
+
+  // 黄泉指:一条贯穿的指芒。
+  // 刻意不套上面的 blade —— 那是「刃」,而这是一道指力:更长更细、前段收成一点、
+  // 尾部留一段渐隐的指迹。配色取自 WeaponConfig 里的 0xcc44ff,
+  // 「配置里的颜色」与「弹体长什么样」必须是同一件事
+  makeTexture(scene, 'proj_huangquan', 20, 6, (g) => {
+    g.fillStyle(0xcc44ff, 0.28);
+    g.fillRect(0, 2, 15, 2); // 指迹
+    g.fillStyle(0xcc44ff, 1);
+    g.fillTriangle(20, 3, 2, 1, 2, 5); // 指芒
+    g.fillStyle(0xe9b8ff, 1);
+    g.fillRect(4, 2, 12, 1); // 中段提亮
+    g.fillStyle(0xffffff, 1);
+    g.fillRect(16, 2, 2, 2); // 指端
+  });
+
+  // 第三目·神目:一道持续压在精英身上的红色光柱。
+  // 它穿透一切(pierce 99)且存续 2.2 秒 —— 所以画成**柱**而不是刃:
+  // 上下等宽、内部一条白热芯,读起来像持续照射,而不是一掠而过的暗器
+  makeTexture(scene, 'proj_third_eye', 22, 10, (g) => {
+    g.fillStyle(0xff4466, 0.3);
+    g.fillRect(0, 1, 22, 8); // 外圈光晕
+    g.fillStyle(0xff4466, 1);
+    g.fillRect(1, 3, 20, 4); // 柱身
+    g.fillStyle(0xffdddd, 1);
+    g.fillRect(3, 4, 16, 2); // 白热芯
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(20, 5, 2);  // 柱头
+  });
 
   // 结丹
-  blade('proj_golden_light', 0xffdd44, 18, 8);
-  orb('proj_demon_eye', 0xaa44ff, 14, 14);
   orb('proj_earth_pillar', 0xaa8855, 18, 18);
 
   // 元婴
-  orb('proj_baby_soul', 0xff88dd, 12, 12);
-  blade('proj_void_edge', 0x6644ff, 20, 8);
-  orb('proj_star_slash', 0xbb88ff, 16, 16);
 
   // 化神
-  orb('proj_sea_of_souls', 0xff5577, 13, 13);
-  blade('proj_chaos_bolt', 0x8866ff, 22, 9);
-  orb('proj_heaven_candle', 0xffcc55, 18, 18);
 
   // 问鼎
-  blade('proj_void_swap', 0xbb88ff, 20, 8);
-  blade('proj_dao_seal', 0xffdd88, 22, 10);
-  orb('proj_grand_collapse', 0xff3344, 20, 20);
 }
 
 function generatePickups(scene: Phaser.Scene): void {
@@ -349,6 +508,45 @@ function generatePickups(scene: Phaser.Scene): void {
     g.fillCircle(8, 8, 2);
   });
 
+  // 每件法宝一张独立纹理。
+  //
+  // 之前所有法宝共用 pickup_artifact 一张图,地面上的法宝彼此无法区分,
+  // 玩家只能捡起来才知道捡到了什么。现在按 ArtifactConfig.color 上色,
+  // 且同一批武器的实际配色与法宝面板图标的配色一致 —— 看到地上一抹紫,
+  // 就知道捡的是极阴。
+  for (const id of ARTIFACT_IDS) {
+    const color = ARTIFACTS[id].color;
+    makeTexture(scene, `pickup_artifact_${id}`, 16, 16, (g) => {
+      for (let i = 0; i < 3; i++) {
+        g.fillStyle(color, 0.14 - i * 0.04);
+        g.fillCircle(8, 8, 8 - i * 2);
+      }
+      g.fillStyle(color, 1);
+      g.fillRect(7, 3, 2, 10);
+      g.fillRect(3, 7, 10, 2);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(8, 8, 2);
+    });
+  }
+
+  // 秘境宝匣:全场最显眼的一件 —— 金色宝匣 + 向上窜的光柱,
+  // 20px(其他掉落物 14-16px)且最亮,为了它改变走位是值得的
+  makeTexture(scene, 'pickup_chest', 20, 20, (g) => {
+    // 光柱:向上渐隐
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle(0xffdd66, 0.10 - i * 0.02);
+      g.fillRect(8 + i * 0.5, 0, 4 - i, 10 - i * 2);
+    }
+    // 匣身
+    g.fillStyle(0x8a5a20, 1);
+    g.fillRect(4, 8, 12, 9);
+    g.fillStyle(0xddaa44, 1);
+    g.fillRect(4, 8, 12, 2);
+    // 锁扣
+    g.fillStyle(0xffee88, 1);
+    g.fillRect(9, 11, 2, 3);
+  });
+
   // 突破道具(丹药):金色丹丸
   makeTexture(scene, 'pickup_key', 14, 14, (g) => {
     for (let i = 0; i < 3; i++) {
@@ -358,6 +556,30 @@ function generatePickups(scene: Phaser.Scene): void {
     g.fillStyle(0xff8822, 1);
     g.fillCircle(7, 7, 5);
     g.fillStyle(0xffdd88, 1);
+    g.fillCircle(5, 5, 2);
+  });
+
+  // 回血丹药:碧绿丹丸,与突破丹同为丹丸形状但配色区分
+  makeTexture(scene, 'pickup_heal', 14, 14, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x44ff88, 0.12 - i * 0.03);
+      g.fillCircle(7, 7, 7 - i * 2);
+    }
+    g.fillStyle(0x22aa55, 1);
+    g.fillCircle(7, 7, 5);
+    g.fillStyle(0xaaffcc, 1);
+    g.fillCircle(5, 5, 2);
+  });
+
+  // 加修为丹药:青蓝丹丸
+  makeTexture(scene, 'pickup_xp_pill', 14, 14, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x66ccff, 0.12 - i * 0.03);
+      g.fillCircle(7, 7, 7 - i * 2);
+    }
+    g.fillStyle(0x2288cc, 1);
+    g.fillCircle(7, 7, 5);
+    g.fillStyle(0xcceeff, 1);
     g.fillCircle(5, 5, 2);
   });
 }

@@ -9,7 +9,7 @@
  */
 import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
-import { ARTIFACTS, MAX_ARTIFACT_TIER } from '../config/ArtifactConfig';
+import { ARTIFACTS, MAX_ARTIFACT_LEVEL, artifactTierPow, artifactTierScale } from '../config/ArtifactConfig';
 import { GameEvents, NEUTRAL_MODS } from '../types';
 import type { ArtifactInstance, FireModifiers } from '../types';
 
@@ -55,8 +55,8 @@ export class ArtifactSystem {
 
     const found = this.equipped.find((a) => a.id === id);
     if (found) {
-      // 重复拾取 = 升阶。槽位满了也不会因为同名法宝而浪费。
-      if (found.level >= MAX_ARTIFACT_TIER) return null;
+      // 重复拾取 = 升一级。槽位满了也不会因为同名法宝而浪费。
+      if (found.level >= MAX_ARTIFACT_LEVEL) return null;
       found.level++;
     } else {
       if (this.equipped.length >= this.slotCap) return null;
@@ -64,8 +64,38 @@ export class ArtifactSystem {
     }
 
     this.cached = null;
-    this.scene.events.emit(GameEvents.ARTIFACT_EQUIPPED, id);
+    // 带上等级:接收方要能区分「新获得」和「升级」,横幅文案才写得出来。
+    // 光给 id 的话 UIScene 只能看到 id,分不清这两种情况。
+    this.scene.events.emit(GameEvents.ARTIFACT_EQUIPPED, id, found ? found.level : 1);
     return id;
+  }
+
+  /**
+   * 提升一件已装备法宝的等级(设计书:法宝满 5 级,线性叠加)。
+   *
+   * 这是法宝的主要成长途径 —— 升级卡,而非重复拾取。
+   * 重复拾取保留为兜底,见 ArtifactConfig 的说明。
+   *
+   * @returns 是否真的升了(未持有或已满级返回 false —— 卡片据此隐藏)
+   */
+  upgrade(id: string): boolean {
+    const inst = this.equipped.find((a) => a.id === id);
+    if (!inst) return false;
+    if (inst.level >= MAX_ARTIFACT_LEVEL) return false;
+    inst.level++;
+    this.cached = null;
+    this.scene.events.emit(GameEvents.ARTIFACT_EQUIPPED, id, inst.level);
+    return true;
+  }
+
+  /** 该法宝是否还能升级 */
+  canUpgrade(id: string): boolean {
+    const inst = this.equipped.find((a) => a.id === id);
+    return !!inst && inst.level < MAX_ARTIFACT_LEVEL;
+  }
+
+  getLevel(id: string): number {
+    return this.equipped.find((a) => a.id === id)?.level ?? 0;
   }
 
   getModifiers(): FireModifiers {
@@ -85,8 +115,7 @@ export class ArtifactSystem {
 
     for (const inst of this.equipped) {
       const c = ARTIFACTS[inst.id];
-      // 阶数缩放:每升一阶效果 +50%
-      const s = 1 + (inst.level - 1) * 0.5;
+      const s = artifactTierScale(inst.level);
 
       m.projectileAdd += Math.round(c.mods.projectileAdd * s);
       m.pierceAdd += Math.round(c.mods.pierceAdd * s);
@@ -97,12 +126,15 @@ export class ArtifactSystem {
 
       m.homingTurn += c.mods.homingTurn * s;
 
-      m.projectileSpeedMul *= c.mods.projectileSpeedMul;
-      m.damageMul *= c.mods.damageMul;
-      m.cooldownMul *= c.mods.cooldownMul;
-      m.areaMul *= c.mods.areaMul;
-      m.lifeMul *= c.mods.lifeMul;
-      m.chainFalloff *= c.mods.chainFalloff;
+      // 倍率同样吃阶数缩放。此前这五行是原样相乘,导致「重复拾取即升阶」
+      // 对纯倍率型法宝(极阴/靠山诀/黄泉升窍)是空操作 —— 乘 1.3 几次都还是 1.3。
+      // 用 pow 而非乘 (1+…):一阶时 pow(x,1) === x,行为与无缩放完全一致。
+      m.projectileSpeedMul = artifactTierPow(m.projectileSpeedMul * c.mods.projectileSpeedMul, inst.level);
+      m.damageMul = artifactTierPow(m.damageMul * c.mods.damageMul, inst.level);
+      m.cooldownMul = artifactTierPow(m.cooldownMul * c.mods.cooldownMul, inst.level);
+      m.areaMul = artifactTierPow(m.areaMul * c.mods.areaMul, inst.level);
+      m.lifeMul = artifactTierPow(m.lifeMul * c.mods.lifeMul, inst.level);
+      m.chainFalloff = artifactTierPow(m.chainFalloff * c.mods.chainFalloff, inst.level);
     }
 
     // 上限钳制:转向过快会产生抖动,冷却过低会让攻速失控

@@ -1,8 +1,13 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/GameConfig';
 import { WEAPONS } from '../config/WeaponConfig';
-import { ARTIFACTS } from '../config/ArtifactConfig';
+import { ARTIFACTS, describeArtifact, MAX_ARTIFACT_LEVEL } from '../config/ArtifactConfig';
+import { EVOLUTIONS } from '../config/EvolutionConfig';
 import { REALMS } from '../config/RealmConfig';
+import { DEBUG_PANEL_ENABLED } from '../config/DebugConfig';
+// 只作类型引用 —— 调试面板要按名字调 GameScene 上的 debug* 方法。
+// type-only import 在编译后不存在,所以不会构成运行时循环依赖
+import type { GameScene } from './GameScene';
 
 /**
  * HUD 场景 - 与 GameScene 并行运行
@@ -104,7 +109,18 @@ export class UIScene extends Phaser.Scene {
       game.events.on('xp-collected', () => this.updateHUD());
       game.events.on('enemy-killed', () => this.updateHUD());
       game.events.on('upgrade-applied', () => { this.updateHUD(); this.refreshWeapons(); });
-      game.events.on('artifact-equipped', () => { this.updateHUD(); this.refreshArtifacts(); });
+      game.events.on('artifact-equipped', (id: string, level: number) => {
+        this.updateHUD();
+        this.refreshArtifacts();
+        // 此前这里只刷新面板,捡到法宝屏幕上一片死寂 —— 玩家既不知道捡到了什么,
+        // 也不知道它改变了什么。现在把名字、等级、实际生效的数值都摆出来。
+        const cfg = ARTIFACTS[id];
+        if (!cfg) return;
+        const color = '#' + cfg.color.toString(16).padStart(6, '0');
+        const head = level > 1 ? `${cfg.name} 祭炼至 ${level} 级` : `获得法宝 ${cfg.name}`;
+        const effect = describeArtifact(id, level);
+        this.showBanner(head, color, 2000, effect || cfg.desc);
+      });
       game.events.on('keyitem-obtained', (id: string) => {
         this.updateHUD();
         const name = REALMS.find((r) => r.keyItemId === id)?.keyItemName ?? id;
@@ -117,6 +133,23 @@ export class UIScene extends Phaser.Scene {
       });
       game.events.on('game-pause', () => this.onGamePause());
       game.events.on('game-resume', () => this.onGameResume());
+      game.events.on('spell-evolved', (_id: string, name: string) => {
+        this.updateHUD();
+        this.refreshWeapons();
+        this.showBanner(`神通进化 · ${name}`, '#ffdd66', 2600, '威力大幅跃升');
+      });
+      // 宝匣结算。一件匣子可能一次触发多个进化,所以载荷是数组
+      game.events.on('chest-resolved', (names: string[]) => {
+        if (names.length === 0) {
+          this.showBanner('秘境宝匣', '#ffdd66', 1400, '三条件未齐,折为修为');
+          return;
+        }
+        this.showBanner(
+          `秘境宝匣 · ${names.length > 1 ? '连环进化' : '进化'}`,
+          '#ffdd66', 2800,
+          names.join('  ·  '),
+        );
+      });
     }
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -145,13 +178,14 @@ export class UIScene extends Phaser.Scene {
     strokeColor: number,
     hoverColor: number,
     onClick: () => void,
+    fontSize = 18,
   ): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
 
     const bg = this.add.rectangle(0, 0, width, height, bgColor).setStrokeStyle(2, strokeColor);
     const txt = this.add.text(0, 0, label, {
       fontFamily: 'monospace',
-      fontSize: '18px',
+      fontSize: `${fontSize}px`,
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
@@ -208,10 +242,20 @@ export class UIScene extends Phaser.Scene {
       const rect = this.add.rectangle(x, 30, 60, 60, 0x222244).setStrokeStyle(2, 0x6a6aff);
       // 颜色与名称读配置,不再硬编码三元表达式
       const icon = this.add.rectangle(x + 4, 30, 40, 30, cfg?.color ?? 0xdddddd);
-      const lvl = this.add.text(x + 20, 56, cfg?.name ?? w.id, {
+      // 重数神通显示「N 重」并标出是否满重(满重才能进化),旧法术仍显示 Lv
+      const isRitual = !!cfg?.usesRituals;
+      const label = isRitual
+        ? `${w.ritual}重`
+        : `Lv${w.level}`;
+      const sub = this.add.text(x + 20, 56, cfg?.name ?? w.id, {
         fontFamily: 'monospace', fontSize: '11px', color: '#ffffff', fontStyle: 'bold',
       }).setOrigin(0.5).setWordWrapWidth(52);
-      this.weaponPanel.add([rect, icon, lvl]);
+      const lv = this.add.text(x + 50, 8, label, {
+        fontFamily: 'monospace', fontSize: '11px',
+        color: isRitual && w.ritual >= 8 ? '#ffdd66' : '#aaaaff',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      this.weaponPanel.add([rect, icon, sub, lv]);
     });
   }
 
@@ -233,16 +277,30 @@ export class UIScene extends Phaser.Scene {
 
     equipped.forEach((a: any, i: number) => {
       const cfg = ARTIFACTS[a.id];
+      const color = cfg?.color ?? 0xffffff;
       const x = i * 70;
-      const rect = this.add.rectangle(x, 30, 60, 60, 0x1a1a33).setStrokeStyle(2, cfg?.color ?? 0xffffff);
+      const rect = this.add.rectangle(x, 30, 60, 60, 0x1a1a33).setStrokeStyle(2, color);
       // 法宝图标用其 color 填充方块 —— 与掉落物外观同色,便于识别
-      const icon = this.add.rectangle(x + 4, 30, 40, 30, cfg?.color ?? 0x888888);
-      const lvl = this.add.text(x + 20, 56, `Lv${a.level}`, {
-        fontFamily: 'monospace', fontSize: '12px', color: '#ffffff', fontStyle: 'bold',
+      const icon = this.add.rectangle(x + 4, 30, 40, 30, color);
+      const lvl = this.add.text(x + 20, 56, `${a.level}级`, {
+        fontFamily: 'monospace', fontSize: '12px',
+        color: a.level >= MAX_ARTIFACT_LEVEL ? '#ffdd66' : '#ffffff',
+        fontStyle: 'bold',
       }).setOrigin(0.5);
       const name = this.add.text(x + 20, 66, cfg?.name ?? a.id, {
         fontFamily: 'monospace', fontSize: '10px', color: '#cccccc',
       }).setOrigin(0.5);
+
+      // 悬停展开详情。
+      //
+      // 60x60 的格子装不下 desc —— 法宝面板在屏幕左下角,横向有的是空间,
+      // 但常驻多行文本会把法术面板挤到画面外。悬停是这里唯一不破坏布局的选择。
+      // 交互对象是 rect 本身(已在 add 列表里,见 CLAUDE.md 的 Container 卡片坑),
+      // 并且用 setInteractive 显式给了矩形命中区 —— Container 本身是 0x0。
+      rect.setInteractive({ useHandCursor: true });
+      rect.on('pointerover', () => this.showArtifactTip(a.id, a.level, color, i));
+      rect.on('pointerout', () => this.hideArtifactTip());
+
       this.artifactPanel.add([rect, icon, lvl, name]);
     });
 
@@ -255,6 +313,56 @@ export class UIScene extends Phaser.Scene {
         }),
       ]);
     }
+  }
+
+  /**
+   * 法宝详情浮层。惰性创建、复用同一个 Container —— 悬停是高频事件,
+   * 每次新建会持续分配 Text 对象。
+   */
+  private artifactTip?: Phaser.GameObjects.Container;
+
+  private showArtifactTip(id: string, level: number, color: number, index: number): void {
+    const cfg = ARTIFACTS[id];
+    if (!cfg) return;
+
+    if (!this.artifactTip) {
+      this.artifactTip = this.add.container(0, 0).setDepth(UIScene.DEPTH_OVERLAY).setVisible(false);
+    }
+
+    // 钥匙提示 —— 设计书铁律三:钥匙与锁必须能一句话说清同源逻辑。
+    // 法宝挂着双重职责(属性 + 钥匙),不给玩家看它开哪把锁,
+    // 「占这一格值不值」这个问题就没人能回答。
+    const unlocks = EVOLUTIONS.filter((e) => e.keys.includes(id));
+    const keyLine = unlocks.length === 0
+      ? ''
+      : `\n钥匙: ${unlocks.map((e) => `${e.evolvedName}(${e.reason})`).join('\n      ')}`;
+
+    const body = `${cfg.desc}\n生效: ${describeArtifact(id, level) || '无'}${keyLine}`;
+    const text = this.add.text(12, 10, `${cfg.name} · ${level} 级\n${body}`, {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#ffffff',
+      lineSpacing: 4,
+      wordWrap: { width: 260 },
+    });
+    // 边框色跟着法宝走,和面板图标、地面掉落物同一套配色
+    const bg = this.add.rectangle(0, 0, text.width + 24, text.height + 20, 0x0a0a1a, 0.94)
+      .setStrokeStyle(2, color)
+      .setOrigin(0, 0);
+
+    // 位置用面板锚点算(UIScene 是固定 1280x720 视口,不需要缩放换算):
+    // 锚在该法宝格子的右上角并向上展开 —— 底部面板向上弹不会跑出画面。
+    const anchorX = this.artifactPanel.x + (index * 70 + 60);
+    const anchorY = this.artifactPanel.y - text.height - 24;
+
+    this.artifactTip.removeAll(true);
+    this.artifactTip.add([bg, text]);
+    this.artifactTip.setPosition(Math.min(anchorX, GAME_WIDTH - text.width - 40), Math.max(10, anchorY));
+    this.artifactTip.setVisible(true);
+  }
+
+  private hideArtifactTip(): void {
+    this.artifactTip?.setVisible(false);
   }
 
   private updateHUD(): void {
@@ -292,23 +400,39 @@ export class UIScene extends Phaser.Scene {
    * 所以在 GameScene.tweens.pauseAll() 生效期间横幅依然会动 ——
    * 这正是「需要筑基丹」这类提示所需要的:它要在暂停之前显示。
    */
-  private showBanner(text: string, color: string, ms = 1600): void {
-    const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 120, text, {
+  private showBanner(text: string, color: string, ms = 1600, sub?: string, startY = GAME_HEIGHT / 2 - 120): void {
+    const box = this.add.container(GAME_WIDTH / 2, startY).setDepth(UIScene.DEPTH_OVERLAY);
+
+    const t = this.add.text(0, 0, text, {
       fontFamily: 'monospace',
       fontSize: '32px',
       color,
       fontStyle: 'bold',
       stroke: '#000000',
       strokeThickness: 6,
-    }).setOrigin(0.5).setDepth(UIScene.DEPTH_OVERLAY);
+    }).setOrigin(0.5);
+
+    // 副标题(法宝的描述 / 实际生效数值)。没有它时横幅只有一行,
+    // 玩家知道「拿到了极阴」但不知道极阴究竟做了什么。
+    const subText = sub
+      ? this.add.text(0, 26, sub, {
+          fontFamily: 'monospace',
+          fontSize: '15px',
+          color: '#ddddff',
+          stroke: '#000000',
+          strokeThickness: 4,
+        }).setOrigin(0.5)
+      : null;
+
+    box.add(subText ? [t, subText] : [t]);
 
     this.tweens.add({
-      targets: t,
-      y: t.y - 40,
+      targets: box,
+      y: box.y - 40,
       alpha: { from: 1, to: 0 },
       duration: ms,
       ease: 'Quad.easeOut',
-      onComplete: () => t.destroy(),
+      onComplete: () => box.destroy(),
     });
   }
 
@@ -376,7 +500,68 @@ export class UIScene extends Phaser.Scene {
     menuBtn.setDepth(UIScene.DEPTH_OVERLAY + 1);
     c.add(menuBtn);
 
+    if (DEBUG_PANEL_ENABLED) this.addDebugPanel(c);
+
     this.pauseOverlay = c;
+  }
+
+  /**
+   * 开发期调试面板
+   *
+   * 入口放在暂停菜单里而不是键盘快捷键上:快捷键能在任何时候触发,包括手滑,
+   * 而「暂停 → 点按钮」把误触成本降到零,也不需要记住键位。
+   *
+   * 点完自动继续 —— 刷出来的怪、进化横幅都在世界层与 HUD 层,
+   * 不恢复的话你只能透过半透明遮罩看个影子。
+   * ⚠️ 发布前把 DebugConfig.DEBUG_PANEL_ENABLED 改成 false。
+   */
+  private addDebugPanel(c: Phaser.GameObjects.Container): void {
+    const w = GAME_WIDTH;
+    const h = GAME_HEIGHT;
+
+    const caption = this.add.text(w / 2, h / 2 + 150, '调试 · 点击后自动继续', {
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      color: '#8899aa',
+    }).setOrigin(0.5);
+    c.add(caption);
+
+    // 顺序按主题分组:法术 / 进化 / 刷怪。三列三行,刚好铺满且不越界
+    const actions: { label: string; run: (g: GameScene) => string }[] = [
+      { label: '下一门法术', run: (g) => g.debugNextSpell() },
+      { label: '装满法术', run: (g) => g.debugGrantAllSpells() },
+      { label: '重置法术', run: (g) => g.debugResetSpells() },
+      { label: '凑齐进化', run: (g) => g.debugFullEvolution() },
+      { label: '满 8 重', run: (g) => g.debugMaxRitual() },
+      { label: '刷全部怪', run: (g) => g.debugSpawnAllMonsters() },
+      { label: '刷精英', run: (g) => g.debugSpawnElite() },
+      { label: '投放机制怪', run: (g) => g.debugFireMechanism() },
+      { label: '下一个机制怪', run: (g) => g.debugNextMechanism() },
+    ];
+
+    const COLS = 3;
+    const COL_X = [-190, 0, 190];
+    actions.forEach((action, i) => {
+      const col = i % COLS;
+      const row = Math.floor(i / COLS);
+      const btn = this.createButton(
+        w / 2 + COL_X[col],
+        h / 2 + 186 + row * 44,
+        176, 38, action.label,
+        0x2a2a3a, 0x5566aa, 0x3f3f58,
+        () => {
+          const game = this.scene.get('GameScene') as unknown as GameScene;
+          const msg = action.run(game);
+          this.togglePause();
+          // 往上挪一格:像「凑齐进化」这类动作自己也会发横幅(进化/宝匣结算),
+          // 同在屏幕中央会叠成一团 —— 调试的那条让位到上面
+          this.showBanner(`调试 · ${action.label}`, '#88ffdd', 2000, msg, GAME_HEIGHT / 2 - 190);
+        },
+        14,
+      );
+      btn.setDepth(UIScene.DEPTH_OVERLAY + 1);
+      c.add(btn);
+    });
   }
 
   private hidePauseOverlay(): void {

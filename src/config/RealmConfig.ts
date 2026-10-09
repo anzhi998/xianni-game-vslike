@@ -74,7 +74,7 @@ export const REALMS: MajorRealmDef[] = [
   {
     id: 'zhuji', name: '筑基期', shortName: '筑基',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 3, artifactSlots: 2,
+    spellSlots: 3, artifactSlots: 1,
     keyItemId: 'zhuji_dan', keyItemName: '筑基丹',
     hpMul: 1.15, damageMul: 1.1, moveSpeedMul: 1.05,
     color: 0x66aaff,
@@ -82,7 +82,7 @@ export const REALMS: MajorRealmDef[] = [
   {
     id: 'jiedan', name: '结丹期', shortName: '结丹',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 4, artifactSlots: 3,
+    spellSlots: 4, artifactSlots: 2,
     keyItemId: 'jiedan_dan', keyItemName: '结丹丹',
     hpMul: 1.35, damageMul: 1.25, moveSpeedMul: 1.1,
     color: 0xffcc55,
@@ -90,7 +90,7 @@ export const REALMS: MajorRealmDef[] = [
   {
     id: 'yuanying', name: '元婴期', shortName: '元婴',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 5, artifactSlots: 3,
+    spellSlots: 5, artifactSlots: 2,
     keyItemId: 'ningying_dan', keyItemName: '凝婴丹',
     hpMul: 1.6, damageMul: 1.45, moveSpeedMul: 1.15,
     color: 0xff88dd,
@@ -114,7 +114,7 @@ export const REALMS: MajorRealmDef[] = [
   {
     id: 'wending', name: '问鼎期', shortName: '问鼎',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 8, artifactSlots: 3,
+    spellSlots: 8, artifactSlots: 6,
     keyItemId: 'wending_dan', keyItemName: '问鼎丹',
     hpMul: 2.6, damageMul: 2.3, moveSpeedMul: 1.25,
     color: 0xffdd44,
