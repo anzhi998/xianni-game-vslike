@@ -5,7 +5,7 @@
  */
 
 import Phaser from 'phaser';
-import { ARTIFACTS, ARTIFACT_IDS } from '../config/ArtifactConfig';
+import { RELIC_IDS, RELICS } from '../config/RelicConfig';
 import { ENEMIES } from '../config/EnemyConfig';
 import type { EnemyConfig, EnemyArchetype } from '../types';
 
@@ -85,36 +85,112 @@ function generateTiles(scene: Phaser.Scene): void {
   });
 }
 
+/**
+ * 玩家 16×24 的**四个朝向**。
+ *
+ * 只画三张:`side` 朝右,左边由 `setFlipX` 像素级镜像出来 —— 单独画一张左边
+ * 只会带来「两张图的手抖」这种差异,镜像则永远严丝合缝。
+ *
+ * ⚠️ 三个键**都**要程序化生成。四视图素材是逐步替换的:玩家只做了
+ * `player_down` 就上线时,另外两个朝向不能变成空白方块。程序化图正好是
+ * 那一档降级 —— 真实素材进来后 `makeTexture` 的 exists 守卫自动顶掉。
+ */
+const PLAYER_W = 16;
+const PLAYER_H = 24;
+
+/** 正面(朝镜头下方)。脸朝下 —— 全局 Y 向下为正 */
+function drawPlayerFront(g: Phaser.GameObjects.Graphics): void {
+  g.fillStyle(0xf5c89a, 1);
+  g.fillRect(5, 2, 6, 6);
+  g.fillStyle(0x3a2418, 1);
+  g.fillRect(4, 1, 8, 3);
+  g.fillStyle(0x000000, 1);
+  g.fillRect(6, 4, 1, 1);
+  g.fillRect(9, 4, 1, 1);
+  g.fillStyle(0x4a4a8a, 1);
+  g.fillRect(4, 8, 8, 12);
+  g.fillStyle(0x6a6aaa, 1);
+  g.fillRect(5, 8, 6, 2);
+  g.fillStyle(0x8a6a2a, 1);
+  g.fillRect(4, 14, 8, 2);
+  g.fillStyle(0x2a2a4a, 1);
+  g.fillRect(5, 16, 2, 6);
+  g.fillRect(9, 16, 2, 6);
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillRect(4, 22, 3, 2);
+  g.fillRect(9, 22, 3, 2);
+}
+
+/**
+ * 背面(朝屏幕上方)。
+ *
+ * 与正面的差别**只在头部**:脸被头发整个盖住,露出后脑与发髻。
+ * 袍子和腿完全照抄 —— 背对镜头时它们本来就一样,多画一笔就是多一处
+ * 可能和正面画风对不上的地方。
+ */
+function drawPlayerBack(g: Phaser.GameObjects.Graphics): void {
+  g.fillStyle(0xf5c89a, 1);
+  g.fillRect(5, 2, 6, 6);
+  // 头发盖住整张脸,只在底部露出一线后颈
+  g.fillStyle(0x3a2418, 1);
+  g.fillRect(4, 1, 8, 7);
+  g.fillStyle(0x2a1810, 1);
+  g.fillRect(7, 1, 2, 2);
+  g.fillStyle(0x4a4a8a, 1);
+  g.fillRect(4, 8, 8, 12);
+  g.fillStyle(0x6a6aaa, 1);
+  g.fillRect(5, 8, 6, 2);
+  g.fillStyle(0x8a6a2a, 1);
+  g.fillRect(4, 14, 8, 2);
+  g.fillStyle(0x2a2a4a, 1);
+  g.fillRect(5, 16, 2, 6);
+  g.fillRect(9, 16, 2, 6);
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillRect(4, 22, 3, 2);
+  g.fillRect(9, 22, 3, 2);
+}
+
+/**
+ * 侧面,**朝右**。
+ *
+ * 朝向感全在这一张上,所以它必须**左右不对称**:袍摆和肩线都往右偏,
+ * 右边多一条手臂 + 一截剑柄。画成对称的话,`setFlipX` 翻转在屏幕上
+ * 等于什么都没发生 —— 那是这张图最容易白做的地方。
+ */
+function drawPlayerSide(g: Phaser.GameObjects.Graphics): void {
+  g.fillStyle(0xf5c89a, 1);
+  g.fillRect(6, 2, 5, 6);
+  g.fillStyle(0x3a2418, 1);
+  g.fillRect(5, 1, 7, 3);
+  g.fillStyle(0x000000, 1);
+  g.fillRect(9, 4, 1, 1); // 只露一只眼
+  g.fillStyle(0x4a4a8a, 1);
+  g.fillRect(4, 8, 8, 12);
+  // 袍摆往右甩 —— 朝向的第二处线索
+  g.fillRect(4, 16, 10, 4);
+  g.fillStyle(0x6a6aaa, 1);
+  g.fillRect(5, 8, 6, 2);
+  g.fillStyle(0x8a6a2a, 1);
+  g.fillRect(4, 14, 8, 2);
+  // 持剑的手臂 + 剑柄(只在右侧)
+  g.fillStyle(0xf5c89a, 1);
+  g.fillRect(10, 10, 3, 2);
+  g.fillStyle(0x88ddff, 1);
+  g.fillRect(11, 4, 2, 7);
+  g.fillStyle(0x2a2a4a, 1);
+  g.fillRect(5, 16, 2, 6);
+  g.fillRect(9, 18, 2, 4);
+  g.fillStyle(0x1a1a1a, 1);
+  g.fillRect(4, 22, 3, 2);
+  g.fillRect(9, 22, 3, 2);
+}
+
 function generatePlayer(scene: Phaser.Scene): void {
-  // 玩家 16x24 朝下 sprite
-  makeTexture(scene, 'player', 16, 24, (g) => {
-    // 头
-    g.fillStyle(0xf5c89a, 1);
-    g.fillRect(5, 2, 6, 6);
-    // 头发
-    g.fillStyle(0x3a2418, 1);
-    g.fillRect(4, 1, 8, 3);
-    // 眼睛
-    g.fillStyle(0x000000, 1);
-    g.fillRect(6, 4, 1, 1);
-    g.fillRect(9, 4, 1, 1);
-    // 身体 (披风)
-    g.fillStyle(0x4a4a8a, 1);
-    g.fillRect(4, 8, 8, 12);
-    g.fillStyle(0x6a6aaa, 1);
-    g.fillRect(5, 8, 6, 2);
-    // 腰带
-    g.fillStyle(0x8a6a2a, 1);
-    g.fillRect(4, 14, 8, 2);
-    // 腿
-    g.fillStyle(0x2a2a4a, 1);
-    g.fillRect(5, 16, 2, 6);
-    g.fillRect(9, 16, 2, 6);
-    // 鞋
-    g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(4, 22, 3, 2);
-    g.fillRect(9, 22, 3, 2);
-  });
+  makeTexture(scene, 'player_down', PLAYER_W, PLAYER_H, drawPlayerFront);
+  makeTexture(scene, 'player_up', PLAYER_W, PLAYER_H, drawPlayerBack);
+  makeTexture(scene, 'player_side', PLAYER_W, PLAYER_H, drawPlayerSide);
+  // 旧键:四视图缺哪张时的兜底(也是美术规格表里原本登记的那个键)
+  makeTexture(scene, 'player', PLAYER_W, PLAYER_H, drawPlayerFront);
 
   // 玩家发光光晕(用于指示)
   makeTexture(scene, 'player_glow', 64, 64, (g) => {
@@ -144,8 +220,15 @@ function brighten(color: number, t: number): number {
   return (mix(r) << 16) | (mix(g) << 8) | mix(b);
 }
 
+/**
+ * 程序化怪物贴图是**单帧**的 —— 怪物不走动,所以这里没有帧间变化可画。
+ *
+ * 真实素材(`src/assets/enemy_*.png`)可以是**等宽横排的多帧图**,
+ * `EnemyFrames.ensureEnemyFrames` 会按实际宽度切帧,只取第 0 帧显示。
+ */
+
 /** 贴图尺寸由碰撞直径推导(碰撞圆用 cfg.size,贴图比它大一圈免得撞上了还看着没碰到) */
-function enemyTextureSize(cfg: EnemyConfig): { w: number; h: number } {
+export function enemyTextureSize(cfg: EnemyConfig): { w: number; h: number } {
   const s = cfg.size;
   switch (cfg.archetype) {
     case 'spawnling': return { w: Math.round(s * 1.6), h: Math.round(s * 1.0) };
@@ -155,6 +238,8 @@ function enemyTextureSize(cfg: EnemyConfig): { w: number; h: number } {
     case 'tank': return { w: Math.round(s * 1.3), h: Math.round(s * 1.3) };
     case 'bomber': return { w: Math.round(s * 1.3), h: Math.round(s * 1.3) };
     case 'stalker': return { w: Math.round(s * 1.2), h: Math.round(s * 1.4) };
+    // 首领:正方形 + 描边余量。它必须一眼看出「这不是杂兵」
+    case 'guardian': return { w: Math.round(s * 1.15), h: Math.round(s * 1.15) };
     default: return { w: Math.round(s * 1.2), h: Math.round(s * 1.3) };
   }
 }
@@ -168,6 +253,30 @@ function drawEnemyShape(
 ): void {
   const r = Math.round;
   switch (shape) {
+    // 首领:巨大的圆盘 + 一圈旋转的焰羽。它在混战里的可辨识度全靠
+    // 「比别的怪大一圈且有角冠」这两件事 —— 体型差是首领战的前提
+    case 'guardian': {
+      const cx = w / 2, cy = h / 2;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        g.fillStyle(c.accent, 1);
+        g.fillTriangle(
+          cx + Math.cos(a) * w * 0.42, cy + Math.sin(a) * h * 0.42,
+          cx + Math.cos(a + 0.35) * w * 0.20, cy + Math.sin(a + 0.35) * h * 0.20,
+          cx + Math.cos(a - 0.35) * w * 0.20, cy + Math.sin(a - 0.35) * h * 0.20,
+        );
+      }
+      g.fillStyle(c.dark, 1);
+      g.fillCircle(cx, cy, w * 0.34);
+      g.fillStyle(c.body, 1);
+      g.fillCircle(cx, cy, w * 0.28);
+      g.fillStyle(c.accent, 1);
+      g.fillCircle(cx, cy, w * 0.13);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillCircle(cx - w * 0.06, cy - h * 0.06, w * 0.05);
+      break;
+    }
+
     // 群怪:四足小兽(山野妖兽 / 腐尸)。矮、宽,一眼是「多而弱」
     case 'horde': {
       g.fillStyle(c.dark, 1);
@@ -303,21 +412,31 @@ function generateEnemies(scene: Phaser.Scene): void {
     const dark = cfg.bodyColor;
     const accent = brighten(cfg.color, 0.45);
 
-    makeTexture(scene, `enemy_${id}`, w, h, (g) => {
-      drawEnemyShape(g, cfg.archetype, w, h, { body, dark, accent });
-    });
-
-    makeTexture(scene, `elite_${id}`, w, h, (g) => {
-      // 精英 = 同阶修士:同形状、整体提亮、描金边。
-      // 混战里「哪只是精英」必须一秒可辨,这比它长什么样重要
-      drawEnemyShape(g, cfg.archetype, w, h, {
-        body: brighten(body, 0.35),
-        dark: brighten(dark, 0.3),
-        accent: 0xffee00,
+    // 贴图宽度就是单帧宽 w —— 怪物不走动,程序化图没有帧间变化。
+    // 真实素材是同一套反向约定:等宽横排,`EnemyFrames` 按实际宽度切帧只取第 0 帧。
+    const drawShape = (
+      key: string,
+      pal: Palette,
+      outline?: number,
+    ): void => {
+      makeTexture(scene, key, w, h, (g) => {
+        drawEnemyShape(g, cfg.archetype, w, h, pal);
+        if (outline !== undefined) {
+          g.lineStyle(1, outline, 1);
+          g.strokeRect(0.5, 0.5, w - 1, h - 1);
+        }
       });
-      g.lineStyle(1, 0xffcc44, 1);
-      g.strokeRect(0.5, 0.5, w - 1, h - 1);
-    });
+    };
+
+    drawShape(`enemy_${id}`, { body, dark, accent });
+
+    // 精英 = 同阶修士:同形状、整体提亮、描金边。
+    // 混战里「哪只是精英」必须一秒可辨,这比它长什么样重要
+    drawShape(`elite_${id}`, {
+      body: brighten(body, 0.35),
+      dark: brighten(dark, 0.3),
+      accent: 0xffee00,
+    }, 0xffcc44);
   }
 }
 
@@ -370,6 +489,114 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillCircle(7, 7, 3);
     g.fillStyle(0xffaa77, 1);
     g.fillCircle(7, 7, 1.5);
+  });
+
+  // 寂灭指:一道贯穿的指气(朝 +X)。
+  //
+  // ⚠️ 配色是玩家判断法术归属的唯一线索:它必须与 SpellConfig 里
+  // jimie 的 color(0xcc44ff)同源。一门指法不能长得像另一门法术,
+  // 否则玩家没法从弹体判断自己面对的是什么。
+  makeTexture(scene, 'proj_jimie', 20, 6, (g) => {
+    g.fillStyle(0xcc44ff, 0.25);
+    g.fillRect(0, 2, 15, 2);                       // 指迹
+    g.fillStyle(0xcc44ff, 1);
+    g.fillTriangle(20, 3, 2, 1, 2, 5);             // 指芒
+    g.fillStyle(0xe9b8ff, 1);
+    g.fillRect(4, 2, 12, 1);
+    g.fillStyle(0xffffff, 1);
+    g.fillRect(16, 2, 2, 2);
+  });
+
+  // 化魔指(寂灭指的进化形态):一道**宽阔的魔气带**。
+  //
+  // ⚠️ 尺寸是被数值钉住的:化魔指的碰撞宽度是 2.0 格 = 128px,
+  //    比寂灭指的 0.4 格宽 5 倍。贴图如果只画 26px,玩家看到的就是一道
+  //    细芒 —— 「范围 ×5」在画面上完全不成立,这就是它表现力不够的根因。
+  //    这里画 96px 宽、配合 SpellConfig 的 visualScale: 1.55,
+  //    正好把宽度铺到与碰撞体一致。改任何一边都要同步另一边。
+  makeTexture(scene, 'proj_huamo', 96, 44, (g) => {
+    const h = 44, mid = h / 2;
+    // 外层魔气:上下两条渐隐的紫雾
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle(0x4400aa, 0.3 - i * 0.06);
+      g.fillRect(6 + i * 2, 2 + i * 4, 88 - i * 5, h - 4 - i * 8);
+    }
+    // 带体:前段宽、尾部收窄(读起来像「扫出去」而不是「飞过去」)
+    g.fillStyle(0x7700dd, 1);
+    g.fillTriangle(0, mid, 16, mid - 18, 16, mid + 18);
+    g.fillRect(14, mid - 18, 78, 36);
+    // 亮芯
+    g.fillStyle(0xbb44ff, 1);
+    g.fillRect(18, mid - 11, 74, 22);
+    g.fillStyle(0xeeccff, 1);
+    g.fillRect(24, mid - 5, 64, 10);
+    // 前端锋刃
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(96, mid, 82, mid - 12, 82, mid + 12);
+    // 尾端撕裂(几缕散开的魔气)
+    g.fillStyle(0xaa22ff, 0.7);
+    g.fillRect(0, mid - 16, 10, 4);
+    g.fillRect(0, mid + 12, 12, 4);
+    g.fillRect(2, mid - 6, 6, 3);
+  });
+
+  // 斩罗决的放射剑气:一柄细长的剑芒(朝 +X)。
+  //
+  // 它与环绕时用的 proj_sword_array(一颗 10px 的青点)必须是两张图 ——
+  // 用同一张的话「飞剑射出去了」与「飞剑还在绕圈」在屏幕上没有区别,
+  // 那正是玩家反馈「没看到效果」的直接原因。
+  makeTexture(scene, 'proj_zhanluo', 40, 14, (g) => {
+    const mid = 7;
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x2288cc, 0.34 - i * 0.1);
+      g.fillRect(2 + i, mid - 6 + i * 2, 36 - i * 3, 12 - i * 4);
+    }
+    // 剑身:尾部渐隐的一段 + 前端收成尖
+    g.fillStyle(0x88ddff, 1);
+    g.fillTriangle(12, mid - 4, 30, mid - 3, 30, mid + 3);
+    g.fillTriangle(12, mid + 4, 30, mid - 3, 30, mid + 3);
+    g.fillStyle(0xccf4ff, 1);
+    g.fillRect(14, mid - 2, 16, 4);
+    // 剑尖
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(40, mid, 30, mid - 4, 30, mid + 4);
+    // 后拖的剑气
+    g.fillStyle(0x88ddff, 0.55);
+    g.fillRect(2, mid - 1, 12, 2);
+    g.fillRect(6, mid - 4, 8, 1);
+    g.fillRect(6, mid + 3, 8, 1);
+  });
+
+  // 厚土术:一道沙砾弹(朝 +X)。
+  //
+  // 它是全场唯一「土系」的弹体,所以刻意画成一颗粗糙的沙团而不是光滑的光球 ——
+  // 关闭特效只看碰撞体时,五种法术仍然是五种可分辨的形状
+  makeTexture(scene, 'proj_sand', 14, 14, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x6a4a22, 0.4 - i * 0.1);
+      g.fillCircle(7, 7, 7 - i * 2);
+    }
+    g.fillStyle(0xc8a05a, 1);
+    g.fillCircle(7, 7, 4.2);
+    g.fillStyle(0xe8d0a0, 1);
+    g.fillCircle(6, 6, 1.6);
+    g.fillStyle(0x8a6a3a, 1);
+    g.fillRect(9, 5, 2, 1);
+    g.fillRect(10, 9, 2, 1);
+  });
+
+  // 五雷正法:一颗跳动的雷球(朝 +X)。
+  // 瞬时连锁本身是 Graphics 画的折线(见 ChainBolt),这张图只用于
+  // 天雷引的空放与形态识别 —— 所以必须是「冷蓝白」而不是火焰色
+  makeTexture(scene, 'proj_bolt', 12, 12, (g) => {
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x4488ff, 0.4 - i * 0.1);
+      g.fillCircle(6, 6, 6 - i * 1.6);
+    }
+    g.fillStyle(0xaaddff, 1);
+    g.fillCircle(6, 6, 3);
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(5, 5, 1.4);
   });
 
   // 灵气弹
@@ -427,46 +654,9 @@ function generateRealmProjectiles(scene: Phaser.Scene): void {
       g.fillCircle(cx - 1, cy - 1, 1.2);
     });
 
-  // 筑基
+  // 剑阵的飞剑:细长的一柄,尖端朝 +X
   orb('proj_sword_array', 0x88ddff, 10, 10);
 
-  // 黄泉指:一条贯穿的指芒。
-  // 刻意不套上面的 blade —— 那是「刃」,而这是一道指力:更长更细、前段收成一点、
-  // 尾部留一段渐隐的指迹。配色取自 WeaponConfig 里的 0xcc44ff,
-  // 「配置里的颜色」与「弹体长什么样」必须是同一件事
-  makeTexture(scene, 'proj_huangquan', 20, 6, (g) => {
-    g.fillStyle(0xcc44ff, 0.28);
-    g.fillRect(0, 2, 15, 2); // 指迹
-    g.fillStyle(0xcc44ff, 1);
-    g.fillTriangle(20, 3, 2, 1, 2, 5); // 指芒
-    g.fillStyle(0xe9b8ff, 1);
-    g.fillRect(4, 2, 12, 1); // 中段提亮
-    g.fillStyle(0xffffff, 1);
-    g.fillRect(16, 2, 2, 2); // 指端
-  });
-
-  // 第三目·神目:一道持续压在精英身上的红色光柱。
-  // 它穿透一切(pierce 99)且存续 2.2 秒 —— 所以画成**柱**而不是刃:
-  // 上下等宽、内部一条白热芯,读起来像持续照射,而不是一掠而过的暗器
-  makeTexture(scene, 'proj_third_eye', 22, 10, (g) => {
-    g.fillStyle(0xff4466, 0.3);
-    g.fillRect(0, 1, 22, 8); // 外圈光晕
-    g.fillStyle(0xff4466, 1);
-    g.fillRect(1, 3, 20, 4); // 柱身
-    g.fillStyle(0xffdddd, 1);
-    g.fillRect(3, 4, 16, 2); // 白热芯
-    g.fillStyle(0xffffff, 0.9);
-    g.fillCircle(20, 5, 2);  // 柱头
-  });
-
-  // 结丹
-  orb('proj_earth_pillar', 0xaa8855, 18, 18);
-
-  // 元婴
-
-  // 化神
-
-  // 问鼎
 }
 
 function generatePickups(scene: Phaser.Scene): void {
@@ -495,8 +685,8 @@ function generatePickups(scene: Phaser.Scene): void {
     g.fillRect(5, 3, 1, 4);
   });
 
-  // 法宝掉落:悬浮的法宝剪影,四周有光晕
-  makeTexture(scene, 'pickup_artifact', 16, 16, (g) => {
+  // 遗物掉落:悬浮的法宝剪影,四周有光晕
+  makeTexture(scene, 'pickup_relic', 16, 16, (g) => {
     for (let i = 0; i < 3; i++) {
       g.fillStyle(0x66ccff, 0.12 - i * 0.03);
       g.fillCircle(8, 8, 8 - i * 2);
@@ -508,15 +698,14 @@ function generatePickups(scene: Phaser.Scene): void {
     g.fillCircle(8, 8, 2);
   });
 
-  // 每件法宝一张独立纹理。
+  // 每件遗物一张独立纹理。
   //
-  // 之前所有法宝共用 pickup_artifact 一张图,地面上的法宝彼此无法区分,
-  // 玩家只能捡起来才知道捡到了什么。现在按 ArtifactConfig.color 上色,
-  // 且同一批武器的实际配色与法宝面板图标的配色一致 —— 看到地上一抹紫,
-  // 就知道捡的是极阴。
-  for (const id of ARTIFACT_IDS) {
-    const color = ARTIFACTS[id].color;
-    makeTexture(scene, `pickup_artifact_${id}`, 16, 16, (g) => {
+  // 所有遗物共用一张图的话,地面上的遗物彼此无法区分,玩家只能捡起来
+  // 才知道捡到了什么。按 RelicConfig.color 上色,并且与遗物面板图标的配色
+  // 完全一致 —— 看到地上一抹紫,就知道捡的是散魔铠甲。
+  for (const id of RELIC_IDS) {
+    const color = RELICS[id].color;
+    makeTexture(scene, `pickup_relic_${id}`, 16, 16, (g) => {
       for (let i = 0; i < 3; i++) {
         g.fillStyle(color, 0.14 - i * 0.04);
         g.fillCircle(8, 8, 8 - i * 2);
@@ -529,26 +718,32 @@ function generatePickups(scene: Phaser.Scene): void {
     });
   }
 
-  // 秘境宝匣:全场最显眼的一件 —— 金色宝匣 + 向上窜的光柱,
-  // 20px(其他掉落物 14-16px)且最亮,为了它改变走位是值得的
-  makeTexture(scene, 'pickup_chest', 20, 20, (g) => {
-    // 光柱:向上渐隐
-    for (let i = 0; i < 4; i++) {
-      g.fillStyle(0xffdd66, 0.10 - i * 0.02);
-      g.fillRect(8 + i * 0.5, 0, 4 - i, 10 - i * 2);
-    }
-    // 匣身
-    g.fillStyle(0x8a5a20, 1);
-    g.fillRect(4, 8, 12, 9);
-    g.fillStyle(0xddaa44, 1);
-    g.fillRect(4, 8, 12, 2);
-    // 锁扣
-    g.fillStyle(0xffee88, 1);
-    g.fillRect(9, 11, 2, 3);
-  });
+  // 洞府宝箱:全场最显眼的一件 —— 宝匣 + 向上窜的光柱,
+  // 20px(其他掉落物 14-16px)且最亮,为了它改变走位是值得的。
+  //
+  // 三档品质各一张:木匣 1 次悟道、玉盒 3 次、金匮 5 次,而它们掉在地上
+  // 是同一件东西 —— 不区分的话玩家没法判断「这一趟值不值得冒险去捡」。
+  const chest = (key: string, glow: number, body: number, lid: number, lock: number) =>
+    makeTexture(scene, key, 20, 20, (g) => {
+      for (let i = 0; i < 4; i++) {
+        g.fillStyle(glow, 0.10 - i * 0.02);
+        g.fillRect(8 + i * 0.5, 0, 4 - i, 10 - i * 2);
+      }
+      g.fillStyle(body, 1);
+      g.fillRect(4, 8, 12, 9);
+      g.fillStyle(lid, 1);
+      g.fillRect(4, 8, 12, 2);
+      g.fillStyle(lock, 1);
+      g.fillRect(9, 11, 2, 3);
+    });
+  chest('pickup_chest_wood', 0xbbbbbb, 0x6a4a2a, 0x9a7a4a, 0xcccccc);
+  chest('pickup_chest_jade', 0x66ccff, 0x2a4a6a, 0x66aaff, 0xaaddff);
+  chest('pickup_chest_gold', 0xffdd66, 0x8a5a20, 0xddaa44, 0xffee88);
+  // 兼容键:旧存档 / 旧掉落表引用的通用宝匣
+  chest('pickup_chest', 0xffdd66, 0x8a5a20, 0xddaa44, 0xffee88);
 
-  // 突破道具(丹药):金色丹丸
-  makeTexture(scene, 'pickup_key', 14, 14, (g) => {
+  // 洞府遗宝的替代图:金色丹丸(灵石袋)
+  makeTexture(scene, 'pickup_stone', 14, 14, (g) => {
     for (let i = 0; i < 3; i++) {
       g.fillStyle(0xffcc44, 0.12 - i * 0.03);
       g.fillCircle(7, 7, 7 - i * 2);

@@ -1,119 +1,105 @@
-/**
- * 进化系统 —— 设计书的核心公式
- *
- *   进化 = 基础神通满 8 重 + 对应钥匙法宝在身 + 拾取 10 分钟后掉落的秘境宝匣
- *
- * 三者缺一不可。这套约束是全局最有分量的取舍:
- *   - 只有满 8 重 → 逼你在前期就锁定要养哪一门,而不是广撒网
- *   - 只有钥匙在手 → 法宝从「属性配件」变成「开锁工具」,栏位开始有战略价值
- *   - 只有宝匣 → 给了 10:00 之后一个明确的追赶节奏点
- *
- * 为什么单独成系统而不是塞进 ArtifactSystem:
- * 进化要同时读三处的状态(神通重数 / 法宝栏 / 玩家手上的宝匣),
- * 任何一个单独的系统都看不到全貌。参照 CLAUDE.md 里 RealmSystem 与
- * XPSystem 的分法 —— 状态各归各家,需要全局判断时由第三方汇总。
- */
-import Phaser from 'phaser';
+import type Phaser from 'phaser';
 import type { WeaponSystem } from './WeaponSystem';
-import type { ArtifactSystem } from './ArtifactSystem';
-import { EVOLUTIONS, EVOLUTION_MUL, ULTIMATE_EVOLUTION_MUL, findEvolution } from '../config/EvolutionConfig';
-import type { EvolutionDef } from '../config/EvolutionConfig';
+import type { RelicSystem } from './RelicSystem';
+import { EVOLUTIONS, findEvolution } from '../config/EvolutionConfig';
+import { MAX_RELIC_LEVEL } from '../config/RelicConfig';
+import { MAX_SPELL_LEVEL } from '../config/SpellConfig';
 import { GameEvents } from '../types';
+import type { EvolutionDef } from '../config/EvolutionConfig';
 
-/** 一门神通的进化条件核验结果 */
-export interface EvolutionCheck {
+/** 某条进化链当前的状态 */
+export interface EvolutionStatus {
   def: EvolutionDef;
-  /** 神通是否已持有且满 8 重 */
-  hasMaxRitual: boolean;
-  /** 钥匙是否全部在身 */
-  hasKeys: boolean;
-  /** 三条件里还差什么(给 UI 看的短文案) */
-  missing: string;
+  /** 主神通是否已满 8 级 */
+  spellOk: boolean;
+  /** 专属遗物是否已满 5 级 */
+  relicOk: boolean;
+  /** 两项都满足 —— 也就是「下一次开宝匣就会融合」 */
+  ready: boolean;
 }
 
-/** 三条件齐备 */
-export function isEvoReady(c: EvolutionCheck): boolean {
-  return c.hasMaxRitual && c.hasKeys;
-}
-
+/**
+ * 道法融合系统 —— 只负责「条件判定」与「换 id + 吞遗物」这一下结算
+ *
+ * ## 为什么条件达成之后还要再开一次宝匣
+ *
+ * 设计书 3.5 的规则 2:条件达成只提示「道机已至」,真正的融合发生在**下一次
+ * 打开任意宝箱**时,并且当次第 1 个选项必定是融合、且**不占奖励次数**。
+ * 这一条让融合保留了「开箱」的仪式感,而不是一个后台自动结算。
+ * 本类因此只回答一个问题:现在有哪些链 ready。
+ */
 export class EvolutionSystem {
   private scene: Phaser.Scene;
   private weaponSystem: WeaponSystem;
-  private artifactSystem: ArtifactSystem;
-
-  /**
- * 宝匣最早掉落时刻(ms)。
- *
- * 设计书规定 10:00 —— 那是平衡值,不是技术值。
- * ⚠️ 当前是临时压到 20 秒,方便验证「满 8 重 + 钥匙 + 宝匣 → 进化」这条链路。
- *    验证完请改回 600_000。
- */
-  static readonly CHEST_UNLOCK_MS = 20_000;
-
-  /** 玩家手上已开过的宝匣数(诊断用) */
+  private relicSystem: RelicSystem;
+  /** 本局已经融合过的链条。已融合的不再重复提示 */
+  private evolvedBases = new Set<string>();
   public chestsOpened = 0;
 
-  constructor(scene: Phaser.Scene, weaponSystem: WeaponSystem, artifactSystem: ArtifactSystem) {
+  constructor(scene: Phaser.Scene, weaponSystem: WeaponSystem, relicSystem: RelicSystem) {
     this.scene = scene;
     this.weaponSystem = weaponSystem;
-    this.artifactSystem = artifactSystem;
+    this.relicSystem = relicSystem;
   }
 
-  /** 宝匣是否已到掉落时间 */
-  isChestAvailable(elapsed: number): boolean {
-    return elapsed >= EvolutionSystem.CHEST_UNLOCK_MS;
-  }
-
-  /** 核验某门神通的进化条件 */
-  check(baseId: string): EvolutionCheck | null {
+  /** 一条链的状态。没持有它的主神通时返回 null */
+  check(baseId: string): EvolutionStatus | null {
     const def = findEvolution(baseId);
     if (!def) return null;
-
-    const hasMaxRitual = this.weaponSystem.isMaxRitual(baseId);
-    const hasKeys = def.keys.every((k) => this.artifactSystem.has(k));
-
-    const miss: string[] = [];
-    if (!hasMaxRitual) {
-      const cur = this.weaponSystem.getRitual(baseId);
-      miss.push(cur === 0 ? '尚未掌握' : `需满 8 重(当前 ${cur})`);
-    }
-    if (!hasKeys) miss.push('缺少钥匙法宝');
-
-    return { def, hasMaxRitual, hasKeys, missing: miss.join(' · ') };
+    if (this.evolvedBases.has(baseId)) return null;
+    const spellOk = this.weaponSystem.getLevel(baseId) >= MAX_SPELL_LEVEL;
+    const relicOk = this.relicSystem.getLevel(def.keyRelic) >= MAX_RELIC_LEVEL;
+    return { def, spellOk, relicOk, ready: spellOk && relicOk };
   }
 
-  /**
-   * 当前有哪些神通可以立刻进化。
-   *
-   * 宝匣面板据此只显示「能用的进化」,而不是让玩家开出一堆没反应的匣子 ——
-   * 这正是设计书说的「宝匣永远优先结算进化而非金币」。
-   */
-  readyEvolutions(): EvolutionCheck[] {
-    const out: EvolutionCheck[] = [];
-    for (const def of EVOLUTIONS) {
-      const c = this.check(def.base);
-      if (c && isEvoReady(c)) out.push(c);
+  /** 当前所有满足条件的链(按法术栏顺序) */
+  readyEvolutions(): EvolutionStatus[] {
+    const out: EvolutionStatus[] = [];
+    for (const s of this.weaponSystem.getSpells()) {
+      const st = this.check(s.id);
+      if (st?.ready) out.push(st);
     }
     return out;
   }
 
-  /** 玩家是否持有至少一件宝匣(用于 UI 提示「可进化了」) */
   hasPendingEvolution(): boolean {
     return this.readyEvolutions().length > 0;
   }
 
   /**
-   * 结算一次进化。调用方负责先确认条件齐备。
-   * @returns 进化后的神通名;失败返回 null
+   * 该专属遗物的进化链是否已经融合完成。
+   *
+   * 融合会把专属遗物**吸收掉**(腾出遗物槽),所以 relicSystem.has() 从此返回 false ——
+   * 只看那一个判断,被吞掉的钥匙会重新出现在悟道池里。而它对进化形态**毫无作用**
+   * (RelicSystem 的专属判定是 exclusive === spellId,而法术 id 已经变成进化形态了),
+   * 于是玩家花一次三选一换来一件什么都不做的遗物。
+   */
+  isRelicSpent(relicId: string): boolean {
+    const def = EVOLUTIONS.find((e) => e.keyRelic === relicId);
+    return !!def && this.evolvedBases.has(def.base);
+  }
+
+  /**
+   * 结算一条融合。
+   *
+   * 三件事一次做完:换 id、吞掉专属遗物(腾出一个遗物槽)、发事件。
+   * 吞遗物是进化「最舒服的一下」—— 两条成本同时兑现,玩家立刻多一个位置补通用遗物。
+   *
+   * @returns 融合后的名称;条件不满足时返回 null
    */
   evolve(baseId: string): string | null {
-    const c = this.check(baseId);
-    if (!c || !isEvoReady(c)) return null;
+    const st = this.check(baseId);
+    if (!st?.ready) return null;
+    const name = this.weaponSystem.evolve(baseId, st.def.evolved);
+    if (!name) return null;
+    this.relicSystem.absorb(st.def.keyRelic);
+    this.evolvedBases.add(baseId);
+    this.scene.events.emit(GameEvents.SPELL_EVOLVED, st.def.evolved, name);
+    return name;
+  }
 
-    const mul = c.def.ultimate ? ULTIMATE_EVOLUTION_MUL : EVOLUTION_MUL;
-    if (!this.weaponSystem.evolve(baseId, c.def.evolved, mul)) return null;
-
-    this.scene.events.emit(GameEvents.SPELL_EVOLVED, c.def.evolved, c.def.evolvedName);
-    return c.def.evolvedName;
+  /** 调试用:跳过条件检查直接标记为已融合 */
+  debugMarkEvolved(baseId: string): void {
+    this.evolvedBases.add(baseId);
   }
 }

@@ -1,92 +1,79 @@
-import type { Upgrade, UpgradeContext } from '../types';
+import type { Upgrade, UpgradeContext, UpgradeType } from '../types';
 
 /**
- * 修仙版强化卡池
+ * 悟道卡池里的「消耗品」
  *
- * 分两类:
- *   - 静态卡:下面 STAT_UPGRADES,与法术/境界无关,任何时候都可出现
- *   - 动态卡:由 GameScene 生成 —— 「法术精进 / 参悟新术 / 开辟法位」
- *     这三种必须知道玩家当前持有哪些法术、槽位是否已满,所以没法在这里静态声明。
+ * 《build设计》3.3 给了卡池五类的权重(新法术 30 / 法术升级 22 / 新遗物 25 /
+ * 遗物叠层 13 / 消耗品 10)。前四类都由当前状态动态生成(有没有空槽、这件满了没),
+ * 只有消耗品是固定的三件 —— 它是「所有法术都满了」时的兜底,也是清场救命的手段。
  *
- * 旧的 UpgradeConfig.ts 里的 (player) => void 签名无法表达「某门法术+1级」,
- * 故改为 (ctx) => void。
+ * 数值写在 effect() 里而不是常量表里:清屏符的伤害必须随等级涨,
+ * 否则 30 分钟里它永远只能清掉 T1 杂兵,一张好牌都没有。
  */
 
-export const STAT_UPGRADES: Upgrade[] = [
+export interface ConsumableDef {
+  id: string;
+  name: string;
+  description: string;
+  iconColor: number;
+  apply: (ctx: UpgradeContext) => void;
+}
+
+export const CONSUMABLES: ConsumableDef[] = [
   {
-    id: 'damage', type: 'damage',
-    name: '神识精进 伤害 +20%',
-    description: '提升所有法术 20% 威力',
-    iconColor: 0xff5555,
-    apply: (c: UpgradeContext) => { c.player.damageMul *= 1.2; },
-  },
-  {
-    id: 'cooldown', type: 'cooldown',
-    name: '凝气迅捷 冷却 -15%',
-    description: '法力流转更快,施法间隔缩短 15%',
-    iconColor: 0xffaa33,
-    apply: (c: UpgradeContext) => { c.player.cooldownMul *= 0.85; },
-  },
-  {
-    id: 'projectile', type: 'projectileCount',
-    name: '万法诀 每次 +1 道',
-    description: '每次施法额外催动一道法术',
-    iconColor: 0x55ff55,
-    apply: (c: UpgradeContext) => { c.player.projectileAdd += 1; },
-  },
-  {
-    id: 'speed', type: 'projectileSpeed',
-    name: '御风诀 弹速 +25%',
-    description: '提升法术飞行速度 25%',
-    iconColor: 0x55ddff,
-    apply: (c: UpgradeContext) => { c.player.projectileSpeedMul *= 1.25; },
-  },
-  {
-    id: 'area', type: 'area',
-    name: '广域术 范围 +20%',
-    description: '增大法术覆盖范围 20%',
-    iconColor: 0xaa55ff,
-    apply: (c: UpgradeContext) => { c.player.areaMul *= 1.2; },
-  },
-  {
-    id: 'pierce', type: 'pierce',
-    name: '锐金芒 穿透 +1',
-    description: '法术可多穿透 1 名敌人',
-    iconColor: 0xffff55,
-    apply: (c: UpgradeContext) => { c.player.pierceAdd += 1; },
-  },
-  {
-    id: 'move', type: 'moveSpeed',
-    name: '身法 速度 +10%',
-    description: '提升移动速度 10%',
-    iconColor: 0x55ffff,
-    apply: (c: UpgradeContext) => { c.player.moveSpeedMul *= 1.1; },
-  },
-  {
-    id: 'pickup', type: 'pickupRange',
-    name: '灵觉 拾取 +30%',
-    description: '增大灵液自动吸附范围 30%',
-    iconColor: 0xaaff55,
-    apply: (c: UpgradeContext) => { c.player.pickupMul *= 1.3; },
-  },
-  {
-    id: 'hp', type: 'maxHealth',
-    name: '炼体 气血上限 +25',
-    description: '气血上限 +25 并立刻回满',
-    iconColor: 0xff8888,
-    apply: (c: UpgradeContext) => {
-      c.player.maxHealth += 25;
-      c.player.health = c.player.maxHealth;
+    id: 'heal_pill',
+    name: '回春丹',
+    description: '立刻回复 30% 最大生命',
+    iconColor: 0x66ff88,
+    apply: (ctx) => {
+      const before = ctx.player.health;
+      ctx.player.heal(Math.round(ctx.player.maxHealth * 0.3));
+      const got = Math.round(ctx.player.health - before);
+      if (got > 0) ctx.player.healed(got);
     },
   },
   {
-    id: 'regen', type: 'healthRegen',
-    name: '生机 +1/秒',
-    description: '每秒自动恢复 1 点气血',
-    iconColor: 0xffaaaa,
-    apply: (c: UpgradeContext) => { c.player.healthRegen += 1; },
+    id: 'clear_tally',
+    name: '清屏符',
+    description: '对场上所有敌人造成一次伤害',
+    iconColor: 0xff8844,
+    apply: (ctx) => {
+      // 随等级线性涨。清屏符的价值全在「现在是后期」时的一次性清场,
+      // 固定数值会让它在 20 级之后变成一张废牌
+      ctx.damageAllEnemies(40 + ctx.level * 8);
+    },
+  },
+  {
+    id: 'spirit_stone',
+    name: '灵石袋',
+    description: '获得 50 灵石',
+    iconColor: 0xffd070,
+    apply: (ctx) => ctx.addCoins(50),
   },
 ];
 
-/** 「开辟法位」卡的额外槽位硬上限 = 境界基础值 + 2 */
-export const MAX_BONUS_SPELL_SLOTS = 2;
+/**
+ * 悟道卡池的权重表(设计书 3.3)。
+ *
+ * 抽的是**类别**而不是具体条目:先按权重摇一个还有货的类别,再从那一类里随机取。
+ * 类别全空时回落到消耗品 —— 绝不出「空面板」。
+ */
+export const CARD_WEIGHTS: Record<'newSpell' | 'spellLevel' | 'newRelic' | 'relicLevel' | 'consumable', number> = {
+  newSpell: 30,
+  spellLevel: 22,
+  newRelic: 25,
+  relicLevel: 13,
+  consumable: 10,
+};
+
+/** 把一个消耗品包成一张悟道卡 */
+export function consumableCard(def: ConsumableDef): Upgrade {
+  return {
+    id: `consumable_${def.id}`,
+    type: 'consumable' as UpgradeType,
+    name: def.name,
+    description: def.description,
+    iconColor: def.iconColor,
+    apply: def.apply,
+  };
+}

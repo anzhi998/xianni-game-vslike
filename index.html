@@ -2,8 +2,22 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#1a1a2e" />
+    <meta name="description" content="Vampire Survivors 风格的修仙割草生存游戏" />
+
+    <!-- PWA:装到主屏幕后按全屏应用跑,而不是浏览器里那个带地址栏的网页 -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="献祭" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+
     <title>献祭 - 吸血鬼幸存者风格 Roguelike</title>
     <style>
       * {
@@ -24,14 +38,23 @@
           'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
         color: #e0e0e0;
         touch-action: none;
+        /* 手机浏览器下拉刷新 / 橡皮筋滚动会把整局游戏拖走,而页面根本没有内容可滚 */
+        overscroll-behavior: none;
       }
 
+      /*
+        画面安全区。刘海屏横屏时左右会被切掉一块(manifest 里 viewport-fit=cover
+        意味着可以铺满,但也意味着会被切),所以把 padding 加在容器上 ——
+        画布落在安全区内,而不是被刘海盖住半条 HUD。
+      */
       #app {
         width: 100%;
         height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left);
       }
 
       #game {
@@ -48,11 +71,58 @@
         image-rendering: pixelated;
         image-rendering: crisp-edges;
       }
+
+      /*
+        竖屏提示。
+        `pointer: coarse` 把平板/手机的竖屏留下,桌面浏览器竖着看窗口(比如拉成一条窄缝)
+        不会突然冒出一块挡路的遮罩 —— 那时候键盘还能玩,遮罩反而添乱。
+      */
+      #rotate-hint {
+        display: none;
+      }
+
+      @media (orientation: portrait) and (pointer: coarse) {
+        #rotate-hint {
+          position: fixed;
+          inset: 0;
+          z-index: 9999;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 18px;
+          background: #0d0d1a;
+          color: #e0e0e0;
+          font-size: 17px;
+          letter-spacing: 0.08em;
+          text-align: center;
+        }
+
+        #rotate-hint .icon {
+          font-size: 46px;
+          animation: rotate-nudge 2.4s ease-in-out infinite;
+        }
+
+        #rotate-hint .sub {
+          font-size: 13px;
+          color: #8a8aa8;
+        }
+      }
+
+      @keyframes rotate-nudge {
+        0%, 55%, 100% { transform: rotate(0deg); }
+        25%, 45% { transform: rotate(-90deg); }
+      }
     </style>
   </head>
   <body>
     <div id="app">
       <div id="game"></div>
+    </div>
+    <div id="rotate-hint">
+      <div class="icon">📱</div>
+      <div>请横屏游玩</div>
+      <div class="sub">本作为横版Roguelike,竖屏无法正常战斗</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

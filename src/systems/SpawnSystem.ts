@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Enemy } from '../entities/Enemy';
 import { ENEMIES } from '../config/EnemyConfig';
 import {
-  getWaveFor, getDifficultyMultiplier, pickEnemyType, MAX_LIVE_ENEMIES,
+  getPace, buildWeights, getDifficultyMultiplier, pickEnemyType, MAX_LIVE_ENEMIES,
 } from '../config/WaveConfig';
 import { rollEliteMutation, makeEliteMutation, MAX_LIVE_ELITES } from '../config/EliteConfig';
 import { NORMAL_MUTATION } from '../types';
@@ -12,14 +12,18 @@ import type { EnemyMutation } from '../types';
 /**
  * 刷怪系统
  *
- * 构成按**大境界段**取(WaveConfig.SEGMENT_WAVES),密度按时间爬坡。
+ * 构成按**登场表**取(WaveConfig.ENEMY_INTROS:谁在第几秒第一次出现),
+ * 密度按**节奏段**取(WaveConfig.PACE_SEGMENTS:每段的基础间隔与强度)。
+ * 两张表互不相干,所以「早一点引出第二种怪」不会顺手改掉密度 —— 反过来也一样。
  * 「哪种怪」与「多密」分开的理由见 WaveConfig 的注释。
  */
 export class SpawnSystem {
   private getPlayerPos: () => { x: number; y: number };
-  private getRealmIndex: () => number;
-  /** 取玩家已装备的法宝 id。用于给「还缺的进化钥匙」加权掉率 */
-  private getOwnedArtifacts: () => string[];
+  private getPlayerRealmIndex: () => number;
+  /** 取玩家已掌握的法术 id。用于把「还没学的法术的专属遗物」排除掉落池 */
+  private getSpellIds: () => string[];
+  /** 取玩家已装备的遗物 id。用于给「还缺的进化钥匙」加权掉率 */
+  private getOwnedRelics: () => string[];
   private enemyPool: Phaser.GameObjects.Group;
   private spawnAccumulator = 0;
   /** 最近一次 update 的时间(秒)。分裂生成的幼虫要沿用当时的难度 */
@@ -28,21 +32,32 @@ export class SpawnSystem {
   constructor(
     enemyPool: Phaser.GameObjects.Group,
     getPlayerPos: () => { x: number; y: number },
-    getRealmIndex: () => number = () => 0,
-    getOwnedArtifacts: () => string[] = () => [],
+    getPlayerRealmIndex: () => number = () => 0,
+    getSpellIds: () => string[] = () => [],
+    getOwnedRelics: () => string[] = () => [],
   ) {
     this.enemyPool = enemyPool;
     this.getPlayerPos = getPlayerPos;
-    this.getRealmIndex = getRealmIndex;
-    this.getOwnedArtifacts = getOwnedArtifacts;
+    this.getPlayerRealmIndex = getPlayerRealmIndex;
+    this.getSpellIds = getSpellIds;
+    this.getOwnedRelics = getOwnedRelics;
   }
 
-  update(time: number, delta: number): void {
-    const seconds = time / 1000;
+  /**
+   * @param seconds **本局已经过去多少秒**,不是场景时钟。
+   *
+   * ⚠️ 这里必须收 `elapsed`,不能收 `time`。Phaser 交上来的 `time` 是
+   *    「页面打开以来的毫秒数」,而 `GameScene.elapsed` 是「本局开始的毫秒数」——
+   *    两者相差一段「玩家在主菜单上停留的时间」。
+   *    曾经这里写的是 `time / 1000`:在菜单上待够 8 分钟再开局,第 8 分钟的
+   *    怪(第一个远程)会在开局第 1 秒刷到脸上,而 HUD 计时器还显示 00:00 ——
+   *    玩家完全无从理解发生了什么。它不报错,只是开局怪得莫名其妙。
+   */
+  update(seconds: number, delta: number): void {
     this.lastSeconds = seconds;
-    const wave = getWaveFor(this.getRealmIndex());
-    const difficulty = getDifficultyMultiplier(seconds, wave.difficulty);
-    const interval = wave.spawnInterval / Math.sqrt(difficulty);
+    const pace = getPace(seconds);
+    const difficulty = getDifficultyMultiplier(seconds, pace.difficulty);
+    const interval = pace.spawnInterval / Math.sqrt(difficulty);
     this.spawnAccumulator += delta / 1000;
     if (this.spawnAccumulator < interval) return;
     this.spawnAccumulator = 0;
@@ -51,7 +66,7 @@ export class SpawnSystem {
     // 它不是性能妥协 ——「敌人是有限的资源」是「迎怪而上」这条策略的前提
     if (this.enemyPool.countActive(true) >= MAX_LIVE_ENEMIES) return;
 
-    this.spawnOne(wave.weights, difficulty, interval);
+    this.spawnOne(buildWeights(seconds), difficulty, interval);
   }
 
   /**
@@ -66,10 +81,10 @@ export class SpawnSystem {
     const enemy = this.enemyPool.get() as Enemy;
     if (!enemy) return;
 
-    enemy.currentRealmIndex = this.getRealmIndex();
-    enemy.ownedArtifacts = this.getOwnedArtifacts();
+    enemy.currentRealmIndex = this.getPlayerRealmIndex();
+    enemy.ownedRelics = this.getOwnedRelics();
     const mutation = elite ? makeEliteMutation(cfg.resist) : NORMAL_MUTATION;
-    enemy.setup(type as keyof typeof ENEMIES, this.currentDifficulty(), mutation, this.getRealmIndex());
+    enemy.setup(type as keyof typeof ENEMIES, this.currentDifficulty(), mutation, this.getPlayerRealmIndex());
     const angle = Math.random() * Math.PI * 2;
     const r = cfg.size;
     enemy.setPosition(
@@ -90,8 +105,8 @@ export class SpawnSystem {
   }
 
   private currentDifficulty(): number {
-    const wave = getWaveFor(this.getRealmIndex());
-    return getDifficultyMultiplier(this.lastSeconds, wave.difficulty);
+    const pace = getPace(this.lastSeconds);
+    return getDifficultyMultiplier(this.lastSeconds, pace.difficulty);
   }
 
   private spawnOne(
@@ -125,11 +140,12 @@ export class SpawnSystem {
     const enemy = this.enemyPool.get() as Enemy;
     // 池耗尽时返回 null(依赖 setupPools 设了有限 maxSize)
     if (!enemy) return;
-    // 掉落表需要知道玩家当前境界与已持有的法宝,
-    // 才能给「正缺的那个丹药」和「还缺的那把钥匙」加权
-    enemy.currentRealmIndex = this.getRealmIndex();
-    enemy.ownedArtifacts = this.getOwnedArtifacts();
-    enemy.setup(type, difficulty, mutation, this.getRealmIndex());
+    // 掉落表需要知道玩家已掌握哪些法术、已持有哪些遗物,
+    // 才能把没学的法术的专属遗物排除掉,并给「还缺的那把钥匙」加权
+    enemy.currentRealmIndex = this.getPlayerRealmIndex();
+    enemy.ownedRelics = this.getOwnedRelics();
+    enemy.ownedSpells = this.getSpellIds();
+    enemy.setup(type, difficulty, mutation, this.getPlayerRealmIndex());
     enemy.setPosition(x, y);
   }
 }

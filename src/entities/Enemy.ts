@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { ENEMIES, REALM_HP_SCALE } from '../config/EnemyConfig';
 import { rollEliteDrops } from '../config/EliteConfig';
+import { showFirstFrame } from '../utils/EnemyFrames';
 import { NORMAL_MUTATION } from '../types';
 import type { Approach, DropEntry, EnemyArchetype, EnemyMutation } from '../types';
 
@@ -20,6 +21,43 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 抗性:天生(配置)与精英掷骰合并后的结果 */
   public resistPull = false;
   public resistFreeze = false;
+  /** 击退抗性。窥涅修士的「免疫击退」靠它成立 */
+  public resistKnockback = false;
+  /** 护甲:0~0.5 的伤害减免。傀儡卫的「高减伤」靠它成立 */
+  public armor = 0;
+
+  // ---- 位移与状态(全部是 setup() 必须复位的字段)----
+  /**
+   * 击退速度偏移(px/s),到期前一直叠加在追猎速度上。
+   *
+   * 为什么是「速度偏移」而不是冲量:EnemyAiSystem 每帧**整体重写**敌人速度,
+   * 一次性冲量在下一帧就被抹掉 —— 引力术当初就是这么变成空操作的。
+   * 所以厚土术的推挤、崩墙的撞击都必须写成这一组字段。
+   */
+  public knockX = 0;
+  public knockY = 0;
+  public knockUntil = 0;
+  /** 眩晕截止时刻(ms)。定住它的一切动作,是「撞墙 0.6 秒」那种硬控 */
+  public stunnedUntil = 0;
+  /** 减速强度与截止时刻。速度按 (1 - slowMul) 缩放 */
+  public slowMul = 0;
+  public slowUntil = 0;
+  /** 点燃 / 流血:每秒伤害与截止时刻。累积值由 EnemyAiSystem 每帧取走 */
+  public burnDps = 0;
+  public burnUntil = 0;
+  public burnAccum = 0;
+  /** 感电:层数与截止时刻。五雷正法的自我增伤循环靠它 */
+  public shockStacks = 0;
+  public shockUntil = 0;
+
+  // ---- Boss(全部在 setup 里复位)----
+  /** 非空即为首领。首领不参与精英上限、不被寄魂附身、也不会被传回 */
+  public bossKey = '';
+  public bossPhase = 0;
+  /** 首领当前阶段的下一个动作时刻(ms) */
+  public bossNextActionAt = 0;
+  /** 朱雀「浴火重生」是否已经用过(半血只回满一次) */
+  public bossRebornUsed = false;
 
   // ---- 行为状态:全部是 setup() 必须复位的数值字段 ----
   /** 冲锋状态机(charger 专用) */
@@ -71,14 +109,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 玩家当前所处的大境界下标,用于掉落加权。由 SpawnSystem 注入 */
   public currentRealmIndex = 0;
   /**
-   * 玩家已装备的法宝 id 列表快照,由 SpawnSystem 注入。
+   * 玩家已装备的遗物 id 列表快照,由 SpawnSystem 注入。
    *
    * 掉落掷骰发生在 setup() 里,而 Enemy 是池化实体、不持有 ArtifactSystem ——
    * 所以这里存的是**值**而不是引用,与 currentRealmIndex 同一套注入模式。
    * 每次生成时刷新一次(不是每次 setup 重读),因为掉率按秒级统计,
    * 逐个敌人去问系统没有意义。
    */
-  public ownedArtifacts: string[] = [];
+  public ownedRelics: string[] = [];
+  /** 玩家已掌握的法术 id 快照。用于把「还没学的法术的专属遗物」排除掉落池 */
+  public ownedSpells: string[] = [];
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'enemy_beast');
@@ -101,6 +141,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.archetype = cfg.archetype;
 
     this.setTexture(m.elite ? `elite_${type}` : `enemy_${type}`);
+    // 怪物不走动,只显示横排素材的第 0 帧。每只怪被借出去时贴图都会换,
+    // 所以「显示哪一帧」必须每次 setup 显式写回,而不是靠池子里的残留
+    showFirstFrame(this);
     // 文档第七节:血量 × 玩家境界。系数集中在 EnemyConfig.REALM_HP_SCALE
     const realmHpMul = 1 + REALM_HP_SCALE * Math.max(0, realmIndex);
     this.maxHealth = cfg.maxHealth * difficultyMul * m.hpMul * realmHpMul;
@@ -131,6 +174,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     // setCircle 的偏移相对 body 顶点(= 精灵中心 - 贴图尺寸/2),
     // 所以偏移要补上半个贴图尺寸,碰撞圆才会落在精灵中心。
     body.setOffset(this.frame.realWidth / 2 - r, this.frame.realHeight / 2 - r);
+    // 同 Projectile.setup:setCircle 用的是上一次缓存的缩放,精英(1.6 倍)与
+    // 普通怪交替刷出时第一帧的碰撞圆会算错,这里重算一次。
+    // ⚠️ 只能用 updateBounds —— updateFromGameObject 会按旧 offset 污染 position,
+    //    随后被 postUpdate 写回精灵,把刚生成的怪挪到别处
+    body.updateBounds();
     body.enable = true;
     body.setVelocity(0, 0);
 
@@ -142,11 +190,29 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 坦克的牵引抗性写在配置里,精英再叠一条也不会把它冲掉
     this.resistPull = !!(cfg.resist?.pull || m.resist?.pull);
     this.resistFreeze = !!(cfg.resist?.freeze || m.resist?.freeze);
+    this.resistKnockback = !!(cfg.resist?.knockback || m.resist?.knockback);
+    this.armor = cfg.armor ?? 0;
 
     // 行为状态复位 —— 池化实体漏清任何一项都会带上一轮的残留。
     // 两个「下一次」都加了随机延迟:怪刚在屏外生成就开火/冲锋,
     // 玩家连它长什么样都没看见,那不叫压力,叫偷袭
     const now = this.scene.time.now;
+    this.knockX = 0;
+    this.knockY = 0;
+    this.knockUntil = 0;
+    this.stunnedUntil = 0;
+    this.slowMul = 0;
+    this.slowUntil = 0;
+    this.burnDps = 0;
+    this.burnUntil = 0;
+    this.burnAccum = 0;
+    this.shockStacks = 0;
+    this.shockUntil = 0;
+    this.bossKey = cfg.boss ?? '';
+    this.bossPhase = 0;
+    this.bossNextActionAt = 0;
+    this.bossRebornUsed = false;
+
     this.chargeState = 'approach';
     this.chargePhaseEndsAt = 0;
     this.nextChargeAt = now + 1200 + Math.random() * 1500;
@@ -164,7 +230,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.baseSpeed = this.speed;
     this.baseMaxHealth = this.maxHealth;
 
-    this.drops = m.elite ? rollEliteDrops(this.currentRealmIndex, this.ownedArtifacts) : [];
+    this.drops = m.elite ? rollEliteDrops(this.ownedSpells, this.ownedRelics) : [];
 
     this.setActive(true).setVisible(true);
   }
@@ -200,10 +266,11 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.xpValue *= 2;
 
     this.setScale(this.scaleX * 1.3);
-    const r = this.baseRadius * this.scaleX;
     const body = this.body as Phaser.Physics.Arcade.Body;
+    const r = this.baseRadius * this.scaleX;
     body.setCircle(r, 0, 0);
     body.setOffset(this.frame.realWidth / 2 - r, this.frame.realHeight / 2 - r);
+    body.updateBounds();
   }
 
   /**
@@ -221,6 +288,55 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 蓄力/引信提示的开关。由 EnemyAiSystem 每帧维护 */
   setTell(on: boolean): void {
     this.tellOn = on;
+  }
+
+  // ---- 状态的施加入口 ----
+  //
+  // 全部是「取较大者 + 刷新时间」而不是「覆盖」:同类状态同时命中时
+  // 应该保留更强的那个,否则一发弱减速就能把一发强减速顶掉。
+
+  applySlow(mul: number, ms: number, now: number): void {
+    if (now >= this.slowUntil || mul > this.slowMul) this.slowMul = mul;
+    this.slowUntil = Math.max(this.slowUntil, now + ms);
+  }
+
+  applyBurn(dps: number, ms: number, now: number): void {
+    if (this.burnDps < dps) this.burnDps = dps;
+    this.burnUntil = Math.max(this.burnUntil, now + ms);
+  }
+
+  applyShock(stacks: number, ms: number, now: number, cap: number): void {
+    this.shockStacks = Math.min(cap, this.shockStacks + stacks);
+    this.shockUntil = Math.max(this.shockUntil, now + ms);
+  }
+
+  /** 当前感电层数是否仍然生效 */
+  shockActive(now: number): number {
+    return now < this.shockUntil ? this.shockStacks : 0;
+  }
+
+  /**
+   * 施加一次击退。
+   *
+   * @param speed px/s 的偏移速度,不是位移量 —— 持续到 knockUntil 结束
+   * @returns 是否真的被推动(免疫击退的目标返回 false,调用方据此跳过撞墙伤害)
+   */
+  applyKnock(dirX: number, dirY: number, speed: number, ms: number, now: number): boolean {
+    if (this.resistKnockback) return false;
+    const len = Math.hypot(dirX, dirY) || 1;
+    this.knockX = (dirX / len) * speed;
+    this.knockY = (dirY / len) * speed;
+    this.knockUntil = Math.max(this.knockUntil, now + ms);
+    return true;
+  }
+
+  /** 眩晕。定身只停动作,眩晕连移动一起停 —— 全体系只有撞墙会给它 */
+  stun(ms: number, now: number): void {
+    this.stunnedUntil = Math.max(this.stunnedUntil, now + ms);
+  }
+
+  isStunned(now: number): boolean {
+    return now < this.stunnedUntil;
   }
 
   /**

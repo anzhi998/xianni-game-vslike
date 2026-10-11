@@ -1,8 +1,8 @@
 /**
- * 修为系统
+ * 修为系统 —— 灵气 / 等级 / 升一级所需
  *
- * 刻意保持「笨」:只管 xp / level / xpToNext,完全不知道境界的存在。
- * 「现在能不能升级」这个判断由 canLevelUp 谓词注入,默认永远为真。
+ * 刻意保持「笨」:只管三个数字,不知道法术、遗物、地图、Boss 的存在。
+ * 悟道卡池由 GameScene 构建 —— 只有它同时握有全部系统。
  */
 import type { Player } from '../entities/Player';
 import { GameEvents } from '../types';
@@ -15,26 +15,26 @@ export class XPSystem {
   private xpToNext: number;
   public onLevelUp: () => void = () => {};
 
-  /** 升级门控。由 RealmSystem 注入,默认放行 */
-  private canLevelUp: () => boolean;
-
-  constructor(scene: Phaser.Scene, _player: Player, canLevelUp: () => boolean = () => true) {
+  constructor(scene: Phaser.Scene, _player: Player) {
     this.scene = scene;
-    this.canLevelUp = canLevelUp;
     this.xpToNext = this.computeXpToNext(this.level);
   }
 
   /**
-   * 升到下一级所需的修为。
+   * 升到下一级所需灵气。
    *
-   * ⚠️ 这是全局最重要的调参数字。
+   * 曲线 = 0.9 × L^1.75,取整到 5 的倍数。
    *
-   * 系数 4 对应《仙逆》原著的七境界体系(凝气十五层 + 六境各五层):
-   * 凝气期约 4.5 分钟走完,满问鼎约 13.2 分钟。
-   * 换成七境界之前的六境时是 6,但那套境界更短,系数需要跟着调。
+   * ⚠️ 这是全局最重要的调参数字。指数是「每级所需增长多快」的唯一旋钮:
+   *    指数越大,前期快、后期慢(70 级才拿到),指数越小则一局能到更高等级。
+   *    《build设计》3.2 给的表与这个公式逐点吻合(2 级 5、20 级 170、80 级 1925),
+   *    并且写明一局 30 分钟常态落在 60–75 级。
+   *    若实测一局等级偏低,先下调指数(1.75 → 1.65),**不要靠加槽位解决** ——
+   *    加槽位会让「70 级够填满 + 叠满 + 融合」这条槽位经济学彻底失去参考价值。
    */
   private computeXpToNext(level: number): number {
-    return Math.floor(12 + level * 4);
+    const raw = 0.9 * Math.pow(level, 1.75);
+    return Math.max(5, Math.round(raw / 5) * 5);
   }
 
   getXp(): number {
@@ -43,7 +43,6 @@ export class XPSystem {
   getXpToNext(): number {
     return this.xpToNext;
   }
-  /** 可能 > 1(卡在大境界道具门槛上时),HUD 用它把进度条画满 */
   getProgress(): number {
     return this.xp / this.xpToNext;
   }
@@ -51,10 +50,7 @@ export class XPSystem {
   add(amount: number): { leveledUp: boolean } {
     this.xp += amount;
     let leveledUp = false;
-    while (this.xp >= this.xpToNext) {
-      // 门控不放行时保留修为,等玩家拿到道具后下一次拾取自然补升
-      if (!this.canLevelUp()) break;
-
+    if (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
       this.xpToNext = this.computeXpToNext(this.level);
@@ -63,9 +59,15 @@ export class XPSystem {
       this.onLevelUp?.();
       // 每次只升一级:onLevelUp 会 pauseGame() 并 launch UpgradeScene,
       // 对已运行场景再次 launch 是空操作,继续循环会把多出来的等级白白吞掉。
-      // 余下的修为保留在 xp 里,选完卡之后下一次拾取会自动补升。
-      break;
+      // 余下的修为保留在 xp 里,选完卡之后 GameScene 会补升。
     }
     return { leveledUp };
+  }
+
+  /** 调试用:直接把等级设到某个值,并把修为补到该级起点 */
+  debugSetLevel(level: number): void {
+    this.level = Math.max(1, level);
+    this.xp = 0;
+    this.xpToNext = this.computeXpToNext(this.level);
   }
 }

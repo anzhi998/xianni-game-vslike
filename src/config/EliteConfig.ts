@@ -1,6 +1,5 @@
-import { ARTIFACT_IDS } from './ArtifactConfig';
+import { RELIC_IDS, RELICS } from './RelicConfig';
 import { EVOLUTIONS } from './EvolutionConfig';
-import { REALMS } from './RealmConfig';
 import { NORMAL_MUTATION } from '../types';
 import type { DropEntry, EnemyMutation, EnemyResist } from '../types';
 
@@ -80,7 +79,7 @@ export function makeEliteMutation(baseResist: EnemyResist = {}): EnemyMutation {
 }
 
 /** 抗性键的顺序(掷骰与计数共用,别在两处各写一份) */
-const RESIST_KEYS: (keyof EnemyResist)[] = ['pull', 'freeze', 'instakill'];
+const RESIST_KEYS: (keyof EnemyResist)[] = ['pull', 'freeze', 'knockback'];
 
 function resistCount(r: EnemyResist): number {
   return RESIST_KEYS.reduce((n, k) => n + (r[k] ? 1 : 0), 0);
@@ -132,80 +131,67 @@ export const HEAL_PILL_FRACTION = 0.25;
 export const XP_PILL_FRACTION = 0.35;
 
 /**
- * 该法宝是否为某门神通的进化钥匙。
- * 判定从 EVOLUTIONS 反查,而不是在法宝表里手写 isKey 字段 ——
+ * 该遗物是否为某门神通的进化钥匙。
+ * 判定从 EVOLUTIONS 反查,而不是在遗物表里手写 isKey 字段 ——
  * 配对表是唯一事实来源,两处各维护一份必然会走偏。
  */
 function isEvolutionKey(id: string): boolean {
-  return EVOLUTIONS.some((e) => e.keys.includes(id));
+  return EVOLUTIONS.some((e) => e.keyRelic === id);
 }
 
-/** 还缺的钥匙的权重 */
+/** 还缺的那件专属遗物的权重 */
 const KEY_WEIGHT = 3;
-
-/** 没拿过的普通法宝的权重 */
+/** 没拿过的通用遗物的权重 */
 const MISSING_WEIGHT = 2;
 
 /**
  * 掷出这具精英尸体的掉落。
  *
- * 秘境宝匣必掉 —— 但注意 10:00 之前不落地,由 GameScene 在生成掉落时把关。
- * 突破道具对「玩家当前正要突破的那个」加权 3 倍 —— 避免大境界门槛退化成纯粹刷量,
- * 但不取消 hunt 的感觉。
+ * 洞府宝箱必掉(木匣 = 1 次悟道三选一)。精英是整局资源链的入口:
+ * **没有精英就没有宝匣,就没有道法融合** —— 所以它不该靠运气。
  *
- * 不做「已满阶法宝过滤」:法宝槽满 / 已满阶时 equip() 会返回 null,
- * GameScene 会在拾取时把溢出转化为突破道具,掉落因此永不浪费。
+ * 遗物三档权重(理由见 pickRelic):
+ *   专属钥匙 ×3 / 没拿过的 ×2 / 已持有的 ×1
+ *
+ * 专属遗物只在**已学会对应神通**时才会被抽到 —— 抽到「仙剑」却没学剑阵是废牌。
+ * 这条门槛同时意味着:玩家想拿齐五把钥匙,就必须去学那五门法术。
+ *
+ * 溢出不做过滤:遗物槽满 / 已满级时 equip() 返回 null,
+ * GameScene 在拾取时把它折成修为,掉落因此永不浪费。
  */
-export function rollEliteDrops(
-  currentRealmIndex: number,
-  ownedArtifacts: string[] = [],
-): DropEntry[] {
+export function rollEliteDrops(spellIds: string[] = [], ownedRelics: string[] = []): DropEntry[] {
   const out: DropEntry[] = [];
+  out.push({ kind: 'chest', payload: 'wood' });
 
-  // 必掉宝匣。它是全局唯一的进化跳档,由精英独占这个供给
-  out.push({ kind: 'chest', payload: 0 });
-
-  // 突破道具:保底一个,另有 60% 概率再掉一个
-  const id = pickNeededKeyItem(currentRealmIndex);
-  if (id) out.push({ kind: 'keyItem', payload: id });
-  if (Math.random() < 0.6) {
-    const id2 = pickNeededKeyItem(currentRealmIndex);
-    if (id2) out.push({ kind: 'keyItem', payload: id2 });
+  if (Math.random() < 0.4) {
+    const id = pickRelic(spellIds, ownedRelics);
+    if (id) out.push({ kind: 'relic', payload: id });
   }
 
-  // 法宝
-  if (Math.random() < 0.3) {
-    out.push({ kind: 'artifact', payload: pickArtifact(ownedArtifacts) });
-  }
-
-  // 丹药是消耗品,各只掷一次
-  if (Math.random() < HEAL_PILL_CHANCE) {
-    out.push({ kind: 'heal', payload: 0 });
-  }
-  if (Math.random() < XP_PILL_CHANCE) {
-    out.push({ kind: 'xpPill', payload: 0 });
-  }
+  if (Math.random() < HEAL_PILL_CHANCE) out.push({ kind: 'heal', payload: 0 });
+  if (Math.random() < XP_PILL_CHANCE) out.push({ kind: 'xpPill', payload: 0 });
 
   return out;
 }
 
 /**
- * 随机挑一件法宝掉落。
+ * 随机挑一件遗物掉落。
  *
- * 三档权重,理由分别是:
- *   KEY_WEIGHT(3) —— 还缺的钥匙。没拿齐钥匙就永远凑不齐进化的三条件,
- *                    而当前法术池里配了钥匙的法宝只有灵液·天逆一件,
- *                    均匀随机的期望命中时间长得离谱。
- *   MISSING_WEIGHT(2) —— 没拿过的普通法宝。法宝栏 6 格要填满 + 5 级要养,
- *                    新的法宝总是有稀释重复值的价值。
- *   权重 1 —— 已经持有的(重复拾取 = 升一级),仍然有效但不该占掉前两档的名额。
+ *   KEY_WEIGHT(3) —— 还没拿到的**专属**遗物(且对应神通已学会)。
+ *     没有它们就凑不齐道法融合,而一局能开几次宝匣是有限的。
+ *   MISSING_WEIGHT(2) —— 没拿过的通用遗物。遗物栏 6 格要填满 + 每件要养到 5 级,
+ *     新遗物始终有稀释重复值的价值。
+ *   权重 1 —— 已经持有的(重复拾取 = 叠一级),仍然有效但不该占掉前两档的名额。
  */
-function pickArtifact(owned: string[]): string {
+function pickRelic(spellIds: string[], owned: string[]): string | null {
   const missingKey: string[] = [];
   const missing: string[] = [];
   const ownedList: string[] = [];
 
-  for (const id of ARTIFACT_IDS) {
+  for (const id of RELIC_IDS) {
+    const cfg = RELICS[id];
+    // 专属遗物有门槛:没学对应神通的钥匙不进池
+    if (cfg.exclusive && !spellIds.includes(cfg.exclusive)) continue;
     if (!owned.includes(id)) {
       (isEvolutionKey(id) ? missingKey : missing).push(id);
     } else {
@@ -213,12 +199,12 @@ function pickArtifact(owned: string[]): string {
     }
   }
 
-  // 全都拿到了就都算「已有」,均匀随即可
   const pool: { id: string; w: number }[] = [
     ...missingKey.map((id) => ({ id, w: KEY_WEIGHT })),
     ...missing.map((id) => ({ id, w: MISSING_WEIGHT })),
     ...ownedList.map((id) => ({ id, w: 1 })),
   ];
+  if (pool.length === 0) return null;
 
   const total = pool.reduce((s, p) => s + p.w, 0);
   let r = Math.random() * total;
@@ -227,19 +213,4 @@ function pickArtifact(owned: string[]): string {
     if (r <= 0) return p.id;
   }
   return pool[pool.length - 1].id;
-}
-
-/** 随机挑一个突破道具。正缺的那个权重 3 倍,其余留少量权重供玩家囤下一境的丹药 */
-function pickNeededKeyItem(currentRealmIndex: number): string | null {
-  const withItems = REALMS.filter((r) => r.keyItemId);
-  if (withItems.length === 0) return null;
-
-  const weights = withItems.map((r) => (REALMS.indexOf(r) === currentRealmIndex ? 3 : 1));
-  const total = weights.reduce((s, w) => s + w, 0);
-  let r = Math.random() * total;
-  for (let i = 0; i < withItems.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return withItems[i].keyItemId;
-  }
-  return withItems[withItems.length - 1].keyItemId;
 }

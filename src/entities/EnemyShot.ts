@@ -19,6 +19,14 @@ export class EnemyShot extends Phaser.Physics.Arcade.Sprite {
   public isDead = false;
   public lifeMs = 3000;
   public bornAt = 0;
+  /**
+   * 是不是首领发出的弹。
+   *
+   * 只有满级厚土术会读它:沙浪可以打掉普通术修的弹,但**首领的火羽不能被打掉** ——
+   * Boss 的招式是它唯一的压迫手段,允许清弹等于把「躲扇形」这道题直接删了,
+   * 朱雀会退化成一只血厚的木桩。
+   */
+  public fromBoss = false;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, 'proj_enemy_shot');
@@ -28,7 +36,11 @@ export class EnemyShot extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(78);
   }
 
-  setup(x: number, y: number, angle: number, damage: number, speed: number, lifeMs = 3000): void {
+  setup(
+    x: number, y: number, angle: number, damage: number, speed: number,
+    lifeMs = 3000, fromBoss = false,
+  ): void {
+    this.fromBoss = fromBoss;
     this.setPosition(x, y);
     this.setActive(true).setVisible(true);
     this.setTexture('proj_enemy_shot');

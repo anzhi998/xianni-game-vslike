@@ -1,0 +1,67 @@
+# 构建并发布到 GitHub Pages
+#
+# 为什么不提交 dist/: 它在 .gitignore 里,而且 Vite 的产物名带内容哈希 ——
+# 提交进去等于每次构建都产生一次「文件变了」的提交,git 历史被构建产物淹没。
+# 源文件在 master 上,产物由本工作流生成。
+#
+# ⚠️ 启用前提(在仓库设置里,只做一次):
+#     Settings → Pages → Build and deployment → Source → **GitHub Actions**
+#     不选这一项的话,工作流会在部署那一步失败,而构建那一步是绿的 —— 症状是
+#     「CI 显示成功但网址打不开」,很容易误以为是缓存或 base 配错了。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    # 两个都写上:本地只有 master,但新建的 GitHub 仓库默认分支叫 main。
+    # 只写一个的话,推到另一个名字的分支时工作流**静默不触发** ——
+    # 症状是「push 成功、CI 一个 run 都没有、Pages 永远停在旧版本」。
+    branches: [master, main]
+  # 手动触发:改完 vite 配置想当场看一眼效果时用
+  workflow_dispatch:
+
+# 官方模板给的是宽松并发(不取消正在跑的),这里改成立即取消旧的:
+# 连着推两次时,后一次构建的产物才是最终产物,中途那次没意义。
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read   # 读源码
+  pages: write     # 写产物
+  id-token: write  # 换取部署令牌(PAGES_URL 校验会用到)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 装依赖
+        run: npm ci
+
+      # build 脚本本身已经是 `tsc --noEmit && vite build`。
+      # ⚠️ 别在这里再加一步 typecheck —— 那是重复的,而且会让失败信息出现两次,
+      # 让人怀疑是不是有第二个问题。
+      - name: 类型检查 + 构建
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

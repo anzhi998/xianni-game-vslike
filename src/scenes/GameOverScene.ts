@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../config/GameConfig';
 import { SaveManager } from '../utils/SaveManager';
-import { ARTIFACTS } from '../config/ArtifactConfig';
+import { RELICS } from '../config/RelicConfig';
 
 export class GameOverScene extends Phaser.Scene {
   private surviveTime = 0;
@@ -10,7 +10,8 @@ export class GameOverScene extends Phaser.Scene {
   private newRecordTime = false;
   private newRecordKills = false;
   private realmName = '凝气期·一层';
-  private artifacts: string[] = [];
+  private coins = 0;
+  private relics: string[] = [];
 
   constructor() {
     super('GameOverScene');
@@ -21,7 +22,8 @@ export class GameOverScene extends Phaser.Scene {
     this.kills = data.kills || 0;
     this.level = data.level || 1;
     this.realmName = data.realmName || '凝气期·一层';
-    this.artifacts = (data.artifacts ?? []) as string[];
+    this.coins = data.coins ?? 0;
+    this.relics = (data.relics ?? []) as string[];
     this.newRecordTime = !!data.newRecordTime;
     this.newRecordKills = !!data.newRecordKills;
   }
@@ -47,12 +49,13 @@ export class GameOverScene extends Phaser.Scene {
       { label: '击杀数', value: String(this.kills), color: '#ffdd44' },
       { label: '达到等级', value: `Lv ${this.level}`, color: '#aaccff' },
       { label: '最终境界', value: this.realmName, color: '#88ddff' },
+      { label: '灵石', value: String(this.coins), color: '#ffd070' },
     ];
 
-    // 本局获得的法宝
-    if (this.artifacts.length > 0) {
-      const names = this.artifacts.map((id) => ARTIFACTS[id]?.name ?? id).join('  ');
-      lines.push({ label: '所得法宝', value: names, color: '#ffcc44' });
+    // 本局获得的遗物
+    if (this.relics.length > 0) {
+      const names = this.relics.map((id) => RELICS[id]?.name ?? id).join('  ');
+      lines.push({ label: '所得遗物', value: names, color: '#ffcc44' });
     }
     lines.forEach((line, i) => {
       const y = statsY + i * 50;
@@ -96,9 +99,20 @@ export class GameOverScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     // 按钮
+    //
+    // ⚠️ 尺寸与间距是按「手指」定的,不是按鼠标定的:手机横屏时整块画布被缩到
+    // 0.55 倍,50px 高的按钮落到屏幕上只有 27 个 CSS 像素,手指按不中。
+    // 而且原来两个按钮的中心相距 220、宽度正好 200 —— **它们是贴在一起的**,
+    // 想「再来一局」很容易点成「回主菜单」,而后者会丢掉这一局。
     const btnY = h - 110;
-    const restart = this.add.rectangle(w / 2 - 110, btnY, 200, 50, 0x4a4a8a).setStrokeStyle(2, 0x6a6aff).setInteractive({ useHandCursor: true });
-    this.add.text(w / 2 - 110, btnY, '再来一局', { fontFamily: 'monospace', fontSize: '20px', color: '#ffffff' }).setOrigin(0.5);
+    const btnW = 260;
+    const btnH = 76;
+    const btnGap = 30;
+    const restartX = w / 2 - (btnW + btnGap) / 2;
+    const menuX = w / 2 + (btnW + btnGap) / 2;
+
+    const restart = this.add.rectangle(restartX, btnY, btnW, btnH, 0x4a4a8a).setStrokeStyle(2, 0x6a6aff).setInteractive({ useHandCursor: true });
+    this.add.text(restartX, btnY, '再来一局', { fontFamily: 'monospace', fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
     restart.on('pointerover', () => restart.setFillStyle(0x6a6aff));
     restart.on('pointerout', () => restart.setFillStyle(0x4a4a8a));
     restart.on('pointerdown', () => {
@@ -106,8 +120,8 @@ export class GameOverScene extends Phaser.Scene {
       this.scene.start('GameScene');
     });
 
-    const menu = this.add.rectangle(w / 2 + 110, btnY, 200, 50, 0x6a4a2a).setStrokeStyle(2, 0xffaa44).setInteractive({ useHandCursor: true });
-    this.add.text(w / 2 + 110, btnY, '回主菜单', { fontFamily: 'monospace', fontSize: '20px', color: '#ffffff' }).setOrigin(0.5);
+    const menu = this.add.rectangle(menuX, btnY, btnW, btnH, 0x6a4a2a).setStrokeStyle(2, 0xffaa44).setInteractive({ useHandCursor: true });
+    this.add.text(menuX, btnY, '回主菜单', { fontFamily: 'monospace', fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
     menu.on('pointerover', () => menu.setFillStyle(0x8a6a4a));
     menu.on('pointerout', () => menu.setFillStyle(0x6a4a2a));
     menu.on('pointerdown', () => {

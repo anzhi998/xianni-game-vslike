@@ -1,13 +1,17 @@
 /**
  * 开发期调试面板开关
  *
- * ⚠️ 上线前改成 false(面板整块消失,GameScene 上的 debug* 方法留在那里也无害)。
+ * ⚠️ 生产构建里必须为 false(面板整块消失,GameScene 上的 debug* 方法留在那里也无害)。
+ * 现在它跟着 `import.meta.env.DEV` 走,不再靠人记得改 —— 这个文件曾经就被人忘在
+ * 生产构建上开着,而它的入口是暂停菜单:任何装了游戏的人都能点开刷出十二只怪。
+ * 需要在别的环境临时打开,改这一行,不要改成常 true。
  *
  * 调试入口从键盘快捷键搬到了暂停菜单里,理由有两条:
  *   1. 快捷键在任何时候都会触发,包括手滑与输入法切换 —— 一局正常游戏
  *      因为误触 F3 突然刷出十二只怪,比没有调试手段更糟
  *   2. 快捷键必须被记住,而「暂停 → 点按钮」不需要文档
  *
- * 发布前还要一起改回去的临时值:EvolutionSystem.CHEST_UNLOCK_MS(宝匣 10:00)。
+ * 面板上的动作全部由 GameScene 的 public debug*() 方法提供,列表从配置表推导 ——
+ * 加一门法术、加一只怪或首领都自动出现在面板里,不需要改这个文件。
  */
-export const DEBUG_PANEL_ENABLED = true;
+export const DEBUG_PANEL_ENABLED = import.meta.env.DEV;

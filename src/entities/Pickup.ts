@@ -16,19 +16,19 @@ interface PickupVisual {
 const VISUALS: Record<PickupKind, PickupVisual> = {
   // 灵液:按量分四档,最小的档位也够显眼
   xp:        { texture: 'tier',            radius: 0, depth: 40, lifeMs: 25000, bob: false },
-  // 法宝与突破道具比灵液显眼,也更值得玩家特意去捡
-  artifact:  { texture: 'pickup_artifact', radius: 9, depth: 41, lifeMs: 40000, bob: true  },
-  keyItem:   { texture: 'pickup_key',      radius: 9, depth: 41, lifeMs: 40000, bob: true  },
+  // 遗物比灵液显眼,也更值得玩家特意去捡
+  relic:     { texture: 'pickup_relic',    radius: 9, depth: 41, lifeMs: 40000, bob: true  },
   // 回血/加修为丹药:精英掉落,数量最多,寿命略短以免地面越堆越多
   heal:      { texture: 'pickup_heal',     radius: 8, depth: 41, lifeMs: 30000, bob: true  },
   xpPill:    { texture: 'pickup_xp_pill',  radius: 8, depth: 41, lifeMs: 30000, bob: true  },
   // 秘境宝匣:全场最稀有的掉落,给最显眼的光柱感与最长寿命 ——
   // 它值得玩家为了捡它而改变走位
-  chest:     { texture: 'pickup_chest',    radius: 12, depth: 42, lifeMs: 60000, bob: true },
+  chest:     { texture: 'pickup_chest_wood', radius: 12, depth: 42, lifeMs: 60000, bob: true },
   // 幻饵 / 伪宝匣:机制怪的地面形态。它们的外观**故意**与真货完全一致 ——
   // 那正是它们唯一的武器。给一张不同的贴图等于把机制作废
   bait:      { texture: 'xp_gem_1',        radius: 5,  depth: 40, lifeMs: 45000, bob: false },
-  mimic:     { texture: 'pickup_chest',    radius: 12, depth: 42, lifeMs: 60000, bob: true },
+  // 伪宝匣抄的是**金匮**的长相 —— 它挑的是件好东西来骗你
+  mimic:     { texture: 'pickup_chest_gold', radius: 12, depth: 42, lifeMs: 60000, bob: true },
 };
 
 /** 灵液按修为量分档,决定用哪张纹理 */
@@ -49,11 +49,11 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
   public kind: PickupKind = 'xp';
   /** kind==='xp' 时为修为量 */
   public amount = 1;
-  /** kind==='artifact' | 'keyItem' 时为 id */
+  /** kind==='relic' 时为遗物 id */
   public payloadId = '';
   public isDead = false;
   public bornAt = 0;
-  /** 存活时长(ms)。原 XPGem 永不过期,精英加入后这会致命 */
+  /** 存活时长(ms)。掉落物必须过期 —— 精英遍地走之后,地上的东西会无限堆积 */
   public lifeMs = 25000;
   /** 上下浮动动画的基准 y */
   private baseY = 0;
@@ -78,9 +78,15 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
     if (kind === 'xp') {
       this.amount = typeof payload === 'number' ? payload : 1;
       this.payloadId = '';
-    } else if (kind === 'artifact' || kind === 'keyItem') {
+    } else if (kind === 'relic') {
       this.amount = 0;
       this.payloadId = String(payload);
+    } else if (kind === 'chest') {
+      // 宝箱的品质(wood/jade/gold)决定开几次悟道 —— 它必须随掉落物一起
+      // 躺在地上,而不是在拾取时才决定:木匣与金匮掉在地上是同一个外观,
+      // 但玩家该能通过别的方式知道它值多少(见 BossConfig 的掉落表)
+      this.amount = 0;
+      this.payloadId = typeof payload === 'string' && payload ? payload : 'wood';
     } else {
       // heal / xpPill 的实际数值在拾取时按玩家当时状态计算(见 GameScene.grantPickup)
       this.amount = 0;
@@ -89,11 +95,15 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
 
     this.setTexture(kind === 'xp'
       ? `xp_gem_${tier}`
-      : kind === 'artifact'
-        // 每件法宝一张贴图,按 config 的配色上色 —— 地面掉落物因此可辨。
-        // 兜底到通用贴图:配置新增法宝而忘了生成贴图时,不会退化成无贴图的裸 Sprite
-        ? this.pickTexture(`pickup_artifact_${this.payloadId}`, vis.texture as string)
-        : (vis.texture as string));
+      : kind === 'relic'
+        // 每件遗物一张贴图,按 config 的配色上色 —— 地面掉落物因此可辨。
+        // 兜底到通用贴图:配置新增遗物而忘了生成贴图时,不会退化成无贴图的裸 Sprite
+        ? this.pickTexture(`pickup_relic_${this.payloadId}`, vis.texture as string)
+        // 真宝箱按品质换贴图。伪宝匣走 VISUALS 的固定贴图,不受这条影响 ——
+        // 它必须永远长得像金匮,否则它唯一的武器就作废了
+        : kind === 'chest'
+          ? this.pickTexture(`pickup_chest_${this.payloadId}`, 'pickup_chest')
+          : (vis.texture as string));
     this.setDepth(vis.depth);
     this.setAlpha(1);
     this.lifeMs = vis.lifeMs;

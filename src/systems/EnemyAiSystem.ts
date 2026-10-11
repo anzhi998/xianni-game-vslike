@@ -3,6 +3,7 @@ import { Enemy } from '../entities/Enemy';
 import type { Player } from '../entities/Player';
 import type { Pickup } from '../entities/Pickup';
 import { ENEMIES } from '../config/EnemyConfig';
+import type { Barrier } from '../entities/attacks/Barrier';
 import { WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig';
 
 /**
@@ -47,11 +48,17 @@ export interface EnemyAiDeps {
   eatPickup: (p: Pickup) => void;
   /** 爆炸特效(可选) */
   explodeFx?: (x: number, y: number, radius: number) => void;
+  /** 对一只敌人结算伤害(点燃/流血的跳伤走这里,与其他伤害同一条链) */
+  damageEnemy: (enemy: Enemy, amount: number, x: number, y: number) => void;
+  /** 首领的一次行动。由本系统在 boss 分支到点时回调 —— 它不掌握速度 */
+  bossAction: (enemy: Enemy) => void;
 }
 
 export class EnemyAiSystem {
   private deps: EnemyAiDeps;
   private enemyPool: Phaser.GameObjects.Group;
+  /** 崩墙。阻挡要在所有转向写完之后统一处理,所以由本系统代管 */
+  private barriers: Phaser.GameObjects.Group;
   /**
    * 场上是否有遮天。
    * 每帧在遍历敌人时顺带算出来,交给 GameScene 决定暗角要不要亮 ——
@@ -59,12 +66,17 @@ export class EnemyAiSystem {
    */
   public veilActive = false;
 
-  constructor(enemyPool: Phaser.GameObjects.Group, deps: EnemyAiDeps) {
+  constructor(
+    enemyPool: Phaser.GameObjects.Group,
+    barriers: Phaser.GameObjects.Group,
+    deps: EnemyAiDeps,
+  ) {
     this.enemyPool = enemyPool;
+    this.barriers = barriers;
     this.deps = deps;
   }
 
-  update(time: number, _delta: number): void {
+  update(time: number, delta: number): void {
     const player = this.deps.getPlayer();
     const px = player.x;
     const py = player.y;
@@ -83,16 +95,76 @@ export class EnemyAiSystem {
       if (!e.active || e.isDead) continue;
 
       this.steer(e, player, px, py, time);
+      // 状态覆写在 steer 之后统一做,而不是塞进每个 approach:
+      // 减速乘的是「它自己想往哪走」,击退加在「它实际去哪」——
+      // 两者的顺序反了就会出现「被推着走却因为减速而推不动」
+      this.applyStatusMotion(e, time);
     }
 
-    // 第二遍:场效应(引路尸的拖拽)。
-    // ⚠️ 必须单独一遍、且在所有转向写完之后 —— 拖拽是**叠加**而不是覆盖。
+    // 第二遍:场效应(引路尸的拖拽、崩墙的阻挡、点燃的跳伤)。
+    // ⚠️ 必须单独一遍、且在所有转向写完之后 —— 拖拽与击退都是**叠加**而不是覆盖。
     // 混在第一遍里的话,只要被拖的邻居排在数组后面,它的 chase() 就会把
     // 拖拽量整份盖掉,表现成「引路尸有时灵有时不灵」这种极难查的 bug
     for (let i = 0; i < children.length; i++) {
       const e = children[i] as Enemy;
       if (!e || !e.active || e.isDead) continue;
       this.applyDrag(e, px, py);
+      this.tickBurn(e, time, delta);
+      this.applyBarriers(e, time);
+    }
+  }
+
+  /**
+   * 减速 / 击退 / 眩晕的统一结算。
+   *
+   * 顺序是 v = 转向 ×(1-减速) + 击退偏移,眩晕则整份清零。
+   * 这个顺序不能改:击退是「外力」,应该跑在减速后面 —— 否则一只被推的怪
+   * 会在推力最大时因为减速而几乎不动,厚土术看起来就成了无伤害。
+   */
+  private applyStatusMotion(e: Enemy, now: number): void {
+    const body = e.body as Phaser.Physics.Arcade.Body;
+    let vx = body.velocity.x;
+    let vy = body.velocity.y;
+
+    if (now < e.slowUntil) vx *= 1 - Math.min(0.6, e.slowMul);
+    if (now < e.slowUntil) vy *= 1 - Math.min(0.6, e.slowMul);
+
+    if (now < e.stunnedUntil) {
+      vx = 0;
+      vy = 0;
+    } else if (now < e.knockUntil) {
+      vx += e.knockX;
+      vy += e.knockY;
+    } else {
+      // 到期就清零。留着不清会让一次旧击退在下次 applyKnock 之前一直挂着
+      e.knockX = 0;
+      e.knockY = 0;
+    }
+    body.setVelocity(vx, vy);
+  }
+
+  /** 点燃 / 流血的跳伤。累积后整点扣血,避免每帧调用伤害入口 */
+  private tickBurn(e: Enemy, now: number, delta: number): void {
+    if (now >= e.burnUntil || e.burnDps <= 0) {
+      e.burnDps = 0;
+      e.burnAccum = 0;
+      return;
+    }
+    e.burnAccum += e.burnDps * (delta / 1000);
+    while (e.burnAccum >= 1) {
+      e.burnAccum -= 1;
+      if (!e.active || e.isDead) return;
+      this.deps.damageEnemy(e, 1, e.x, e.y - 8);
+    }
+  }
+
+  /** 崩墙阻挡。逐面墙试,墙池很小(3 个)所以不必建空间索引 */
+  private applyBarriers(e: Enemy, now: number): void {
+    const walls = this.barriers.getChildren();
+    for (let i = 0; i < walls.length; i++) {
+      const w = walls[i] as Barrier;
+      if (!w.active || w.isDead) continue;
+      if (w.block(e, now)) return;
     }
   }
 
@@ -108,7 +180,8 @@ export class EnemyAiSystem {
     const dy = e.y - py;
     const d2 = dx * dx + dy * dy;
 
-    if (e.isElite) {
+    // 首领与精英同样不回收:玩家可以绕着 Boss 跑圈拉扯,那正是战斗的一部分
+    if (e.isElite || e.bossKey) {
       if (d2 <= ELITE_LEASH_RADIUS * ELITE_LEASH_RADIUS) return;
       // 沿「玩家 → 精英」的方向放到玩家周围 600px 处,并钳进世界边界。
       // 用当前方向而不是随机角度:玩家能预期它从原来那一侧回来
@@ -149,6 +222,9 @@ export class EnemyAiSystem {
       case 'hexer':
         this.hexer(e, px, py, time);
         break;
+      case 'boss':
+        this.bossSteer(e, px, py, time);
+        break;
       case 'shepherd':
         // 引路尸的移动就是「缓慢靠近」,它的本事在第二遍的拖拽里
         this.chase(e, px, py);
@@ -160,6 +236,17 @@ export class EnemyAiSystem {
         this.chase(e, px, py);
         break;
     }
+  }
+
+  /**
+   * 首领 —— 移动与普通怪无异,只是到了出招时刻就把决策交给 BossSystem。
+   *
+   * 刻意不写「首领专属移动」:它一旦有了自己的转向,平衡就会分裂成两套,
+   * 而 Boss 的压迫感本来就该来自**招式**,不是来自它跑得更快。
+   */
+  private bossSteer(e: Enemy, px: number, py: number, time: number): void {
+    this.chase(e, px, py);
+    if (time >= e.bossNextActionAt) this.deps.bossAction(e);
   }
 
   /** 直线冲脸 —— 群怪、坦克、潜行、衍体的共同底座 */
@@ -419,6 +506,8 @@ export class EnemyAiSystem {
       const t = children[i] as Enemy;
       if (!t || !t.active || t.isDead || t === e) continue;
       if (t.isElite || t.possessed) continue;
+      // 首领绝不被附身 —— 倍血倍速的首领会直接把一场设计好的 Boss 战变成数值题
+      if (t.bossKey) continue;
       if (ENEMIES[t.enemyKey]?.mechanism) continue;
       const dx = t.x - e.x;
       const dy = t.y - e.y;

@@ -8,7 +8,6 @@ import { MainMenuScene } from '../scenes/MainMenuScene';
 import { GameScene } from '../scenes/GameScene';
 import { UIScene } from '../scenes/UIScene';
 import { UpgradeScene } from '../scenes/UpgradeScene';
-import { ReplaceSpellScene } from '../scenes/ReplaceSpellScene';
 import { GameOverScene } from '../scenes/GameOverScene';
 
 export const GAME_WIDTH = 1280;
@@ -50,7 +49,6 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
     GameScene,
     UIScene,
     UpgradeScene,
-    ReplaceSpellScene,
     GameOverScene,
   ],
 };

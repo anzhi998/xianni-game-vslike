@@ -32,13 +32,25 @@ export interface MajorRealmDef {
   minorSpan: number;
   /** 小境界名,长度应与 minorSpan 一致 */
   minorNames: string[];
-  /** 法术槽位上限(可被「开辟法位」卡额外 +2) */
+  /**
+   * 法术槽上限。**它是本表的唯一事实来源** —— SpellConfig 不再声明槽位数,
+   * 因为「什么时候能带第几门法术」是境界的节奏问题,不是法术的属性。
+   *
+   * 阶梯:凝气 2 → 筑基 3 → 结丹 4 → 元婴 5 → 化神 6,之后不再增长。
+   * 开局只带两门,前中期的每一次大境界突破都直接换成一门新法术的选择权 ——
+   * 这是全局唯一一条「越早突破越赚」的压力线。
+   *
+   * ⚠️ **化神那一格是刻意留的余量,不是漏算**(已确认保留)。目前只有 5 门法术,
+   *    所以元婴(第 5 格)之后就能带满,HUD 会一直显示「法位 5/6 · 空 1」。
+   *    留着它的三个理由:
+   *      1. 第 6 门法术一旦加入,它自动补位,不需要再动境界表;
+   *      2. 满格在 UI 上是「你没得选了」的信号,而空一格永远是「还有别的路」;
+   *      3. 收掉它就得给化神另找一个收益,那是新机制,不是减法。
+   *    若将来真的收槽,改这一张表即可 —— 法术系统只读 setSlotCap 的结果。
+   */
   spellSlots: number;
-  /** 法宝槽位上限 */
-  artifactSlots: number;
-  /** 突破进入本境界所需的道具(凝气期为空,即开局无需道具) */
-  keyItemId: string;
-  keyItemName: string;
+  /** 突破进入本境界后,法位相比上一境增加多少(仅用于突破横幅文案) */
+  slotGain: number;
   /** 突破时一次性施加,乘算到 Player 上 */
   hpMul: number;
   damageMul: number;
@@ -66,56 +78,49 @@ export const REALMS: MajorRealmDef[] = [
   {
     id: 'ningqi', name: '凝气期', shortName: '凝气',
     minorSpan: 15, minorNames: NQ_LAYERS,
-    spellSlots: 2, artifactSlots: 1,
-    keyItemId: '', keyItemName: '',
+    spellSlots: 2, slotGain: 0,
     hpMul: 1.0, damageMul: 1.0, moveSpeedMul: 1.0,
     color: 0x9acccc,
   },
   {
     id: 'zhuji', name: '筑基期', shortName: '筑基',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 3, artifactSlots: 1,
-    keyItemId: 'zhuji_dan', keyItemName: '筑基丹',
+    spellSlots: 3, slotGain: 1,
     hpMul: 1.15, damageMul: 1.1, moveSpeedMul: 1.05,
     color: 0x66aaff,
   },
   {
     id: 'jiedan', name: '结丹期', shortName: '结丹',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 4, artifactSlots: 2,
-    keyItemId: 'jiedan_dan', keyItemName: '结丹丹',
+    spellSlots: 4, slotGain: 1,
     hpMul: 1.35, damageMul: 1.25, moveSpeedMul: 1.1,
     color: 0xffcc55,
   },
   {
     id: 'yuanying', name: '元婴期', shortName: '元婴',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 5, artifactSlots: 2,
-    keyItemId: 'ningying_dan', keyItemName: '凝婴丹',
+    spellSlots: 5, slotGain: 1,
     hpMul: 1.6, damageMul: 1.45, moveSpeedMul: 1.15,
     color: 0xff88dd,
   },
   {
     id: 'huashen', name: '化神期', shortName: '化神',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 6, artifactSlots: 3,
-    keyItemId: 'huashen_dan', keyItemName: '化神丹',
+    spellSlots: 6, slotGain: 1,
     hpMul: 1.9, damageMul: 1.7, moveSpeedMul: 1.2,
     color: 0xff5577,
   },
   {
     id: 'yingbian', name: '婴变期', shortName: '婴变',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 7, artifactSlots: 3,
-    keyItemId: 'yingbian_dan', keyItemName: '婴变丹',
+    spellSlots: 6, slotGain: 0,
     hpMul: 2.2, damageMul: 1.95, moveSpeedMul: 1.22,
     color: 0xbb88ff,
   },
   {
     id: 'wending', name: '问鼎期', shortName: '问鼎',
     minorSpan: 5, minorNames: stages(5),
-    spellSlots: 8, artifactSlots: 6,
-    keyItemId: 'wending_dan', keyItemName: '问鼎丹',
+    spellSlots: 6, slotGain: 0,
     hpMul: 2.6, damageMul: 2.3, moveSpeedMul: 1.25,
     color: 0xffdd44,
   },

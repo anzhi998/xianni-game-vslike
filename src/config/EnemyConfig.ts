@@ -1,7 +1,7 @@
 import type { EnemyConfig } from '../types';
 
 /**
- * 敌人数据表 ——《仙逆幸存者 · 怪物设计》第九节图鉴
+ * 敌人数据表 ——《怪物设计.md》的图鉴在这里落成数据
  *
  * 表的分组就是刷怪表的分组(见 WaveConfig):每突破一个大境界,
  * 新的一段就推出一种**此前没见过的逼近方式**,而不是「同一只怪血更厚」。
@@ -41,6 +41,20 @@ export const ENEMIES: Record<string, EnemyConfig> = {
   /**
    * 腐尸 —— 群怪。比妖兽慢但更耐打,是引力术聚拢后一次贯穿的靶子。
    */
+  /**
+   * 铁甲蚁 —— T1 的第二只,与山野妖兽构成开局的第一次对比。
+   *
+   * 山野妖兽慢而稍厚 / 铁甲蚁极快而极脆 —— 玩家在 30 秒时就拿到
+   * 「跑不过的东西未必肉」这条经验,而不是等到十分钟后才被迫学会。
+   * 血量 6 是被开局一击线钉住的(见 WaveConfig.validateOpeningDifficulty)。
+   */
+  iron_ant: {
+    id: 'iron_ant', name: '铁甲蚁',
+    approach: 'chase', archetype: 'horde',
+    maxHealth: 6, speed: 138, contactDamage: 3, xpValue: 1, size: 10,
+    color: 0x4a4a5a, bodyColor: 0x1a1a2a,
+  },
+
   corpse: {
     id: 'corpse', name: '腐尸',
     approach: 'chase', archetype: 'horde',
@@ -94,6 +108,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     approach: 'advance', archetype: 'tank',
     maxHealth: 70, speed: 32, contactDamage: 18, xpValue: 6, size: 20,
     color: 0x9a9a8a, bodyColor: 0x5a5a4a,
+    armor: 0.35,
     resist: { pull: true },
   },
 
@@ -103,6 +118,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     approach: 'advance', archetype: 'tank',
     maxHealth: 90, speed: 38, contactDamage: 16, xpValue: 6, size: 20,
     color: 0x8a8a98, bodyColor: 0x4a4a58,
+    armor: 0.30,
     resist: { pull: true },
   },
 
@@ -181,7 +197,7 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     pullRadius: 260, pullSpeed: 280,
   },
 
-  // ===== 八种机制怪(文档第四节)======
+  // ===== 机制怪 ======
   //
   // 它们**不进刷怪表**,由 MechanismSystem 按时间间隔单只投放(事件的定位)。
   // 每一只都对应一条「此前一直有效的经验,这次不管用」——
@@ -260,5 +276,27 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     maxHealth: 120, speed: 34, contactDamage: 16, xpValue: 9, size: 19,
     color: 0x9a9a6a, bodyColor: 0x4a4a2a,
     mechanism: { dragRadius: 240 },
+  },
+
+  // ===== 首领(《怪物设计》第五节)=====
+
+  /**
+   * 朱雀(成体) —— 朱雀星守护神,10:00 登场。
+   *
+   * 它**不进刷怪表**,由 BossSystem 按时间表单只投放。
+   * 三阶段的招式与节奏写在 BossConfig,这里只负责「它是一只什么样的怪」:
+   * 血量、护甲、体型、配色。
+   *
+   * 护甲 0.20 是给破防类构筑留的活口:化魔指的破魔 30%、斩罗的破防 35%
+   * 在它身上能削掉约 1/3 护甲 —— 少了这个数字,那两条遗物/进化在终局毫无意义。
+   */
+  zhuque: {
+    id: 'zhuque', name: '朱雀(成体)',
+    approach: 'boss', archetype: 'guardian',
+    maxHealth: 4000, speed: 78, contactDamage: 26, xpValue: 300, size: 76,
+    color: 0xff6622, bodyColor: 0xffaa44,
+    armor: 0.20,
+    attackRange: 300, fireIntervalMs: 2200, shotSpeed: 260, shotDamage: 16,
+    boss: 'zhuque',
   },
 };

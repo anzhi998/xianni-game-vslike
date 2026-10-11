@@ -159,6 +159,10 @@ export class InputManager {
     this.boundOnPointerDown = (pointer: Phaser.Input.Pointer) => {
       if (this.joystickActive) return;
       if (pointer.x > cam.width / 2) return;
+      // 悟道 / 融合面板开着的时候物理是停的,但 Phaser 的输入并没有停 ——
+      // 不挡这一下,玩家点卡片时屏幕上会凭空浮出一个摇杆(它画在 GameScene 的
+      // 相机上,会透过面板的半透明黑底显出来),松手才消失。
+      if (this.scene.physics.world.isPaused) return;
       this.joystickActive = true;
       this.joystickPointerId = pointer.id;
       this.joystickBaseX = pointer.x;

@@ -1,21 +1,26 @@
 /**
- * 范围伤害
+ * 范围查询
  *
- * 落印的落点、弧斩的扫掠带、环绕体的接触、地效的区域 —— 都需要
- * 「一次对一片敌人造成伤害」的能力。统一放这里,避免四个形态各写一遍遍历。
+ * 扇形推进(厚土术)、环绕接触(剑阵)、灼烧区(焚天·火海)都需要
+ * 「一次遍历一片敌人」的能力。统一放这里,避免每个形态各写一遍遍历。
+ *
+ * 全部走 **回调** 而不是返回数组:每帧能命中几十个怪,
+ * 为了返回结果每帧分配一个新数组是纯浪费(还会制造 GC 尖峰)。
  */
 import type Phaser from 'phaser';
 import type { Enemy } from '../entities/Enemy';
-import type { DamageApplier } from '../types';
+import type { DamageApplier, DamageOptions } from '../types';
 
-/** 圆形范围伤害 */
-export function damageEnemiesInRadius(
+/** 命中回调:只传敌人,伤害由调用方自己带 */
+export type EnemyVisitor = (e: Enemy) => void;
+
+/** 圆形范围 */
+export function forEachEnemyInRadius(
   group: Phaser.GameObjects.Group,
   cx: number,
   cy: number,
   radius: number,
-  damage: number,
-  apply: DamageApplier,
+  visit: EnemyVisitor,
   exclude?: Set<Enemy>,
 ): number {
   const list = group.children.entries;
@@ -28,27 +33,26 @@ export function damageEnemiesInRadius(
     const dx = e.x - cx;
     const dy = e.y - cy;
     if (dx * dx + dy * dy > r2) continue;
-    apply(e, damage, e.x, e.y - 8);
+    visit(e);
     hits++;
   }
   return hits;
 }
 
 /**
- * 圆弧范围伤害
+ * 圆弧范围(扇形)
  *
  * @param facing 弧的中心方向(弧度)
- * @param span   扫过的总张角(弧度)
+ * @param span   扫过的总张角(弧度)。山崩地裂的 180° 就是 Math.PI
  */
-export function damageEnemiesInArc(
+export function forEachEnemyInArc(
   group: Phaser.GameObjects.Group,
   cx: number,
   cy: number,
   radius: number,
   facing: number,
   span: number,
-  damage: number,
-  apply: DamageApplier,
+  visit: EnemyVisitor,
   exclude?: Set<Enemy>,
 ): number {
   const list = group.children.entries;
@@ -63,9 +67,7 @@ export function damageEnemiesInArc(
 
     const dx = e.x - cx;
     const dy = e.y - cy;
-    const d2 = dx * dx + dy * dy;
-    if (d2 > r2) continue;
-
+    if (dx * dx + dy * dy > r2) continue;
     // 落在正后方(原点)的不计,否则 span 大于 2π 时会恒真
     if (dx === 0 && dy === 0) continue;
 
@@ -75,8 +77,41 @@ export function damageEnemiesInArc(
     while (diff < -Math.PI) diff += Math.PI * 2;
     if (Math.abs(diff) > half) continue;
 
-    apply(e, damage, e.x, e.y - 8);
+    visit(e);
     hits++;
   }
   return hits;
+}
+
+/** 圆形范围伤害 */
+export function damageEnemiesInRadius(
+  group: Phaser.GameObjects.Group,
+  cx: number,
+  cy: number,
+  radius: number,
+  damage: number,
+  apply: DamageApplier,
+  exclude?: Set<Enemy>,
+): number {
+  return forEachEnemyInRadius(group, cx, cy, radius, (e) => {
+    apply(e, damage, e.x, e.y - 8);
+  }, exclude);
+}
+
+/** 圆弧范围伤害 */
+export function damageEnemiesInArc(
+  group: Phaser.GameObjects.Group,
+  cx: number,
+  cy: number,
+  radius: number,
+  facing: number,
+  span: number,
+  damage: number,
+  apply: DamageApplier,
+  exclude?: Set<Enemy>,
+  opts?: DamageOptions,
+): number {
+  return forEachEnemyInArc(group, cx, cy, radius, facing, span, (e) => {
+    apply(e, damage, e.x, e.y - 8, opts);
+  }, exclude);
 }

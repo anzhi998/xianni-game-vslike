@@ -1,52 +1,35 @@
 import Phaser from 'phaser';
 import type { Enemy } from './Enemy';
-import { findNearestEnemy } from '../utils/Targeting';
-import { WEAPONS } from '../config/WeaponConfig';
-import { NEUTRAL_MODS } from '../types';
-import type { FireModifiers } from '../types';
+import type { DamageApplier, DamageOptions } from '../types';
 
-/** 投射物碰撞圆的基础半径(像素,未乘 scale) */
-const HIT_RADIUS = 5;
-
+/**
+ * 投射物 —— 直线飞行的实体,靠 Arcade overlap 结算命中
+ *
+ * 池化约定(见 CLAUDE.md):setup() 重置全部可变字段,kill() 关掉 body 并清零速度,
+ * 不使用 tween。
+ */
 export class Projectile extends Phaser.Physics.Arcade.Sprite {
   public damage = 10;
-  public speed = 400;
   public pierceLeft = 0;
   public hitSet = new Set<Enemy>();
   public isDead = false;
-  public weaponId = 'knife';
+  public spellId = 'fireball';
   public lifeMs = 1500;
   public bornAt = 0;
-  public facing = 0;
-  public areaMul = 1;
-
-  // ---- 法宝修饰 ----
-  /** 本次发射所属的修饰集合。同一次齐射的所有投射物共享同一个对象,只读 */
-  public mods: FireModifiers = NEUTRAL_MODS;
-  public homingTurn = 0;
-  public homingTarget: Enemy | null = null;
-  public nextRetargetAt = 0;
-  public chainLeft = 0;
-  public chainRadius = 0;
-  public chainFalloff = 1;
-  public searchRadius = 420;
-  /** 连锁余辉时长(ms),在 preUpdate 里衰减 —— 不用 tween,因为池化对象带 tween 会跨存活期 */
-  public chainGlowMs = 0;
+  /** 本发附带的状态(点燃 / 减速)。命中时原样交给 DamageApplier */
+  public status: DamageOptions = {};
 
   /**
-   * 命中回调,由 WeaponSystem 注入(进化态的「炸开一片火海」)。
+   * 命中回调,由 WeaponSystem 注入(焚天·火海的「命中炸开灼烧区」)。
    *
-   * 与 Slam.onImpact 同一套理由:不把 zone 池注入到投射物里,
-   * 而是交出回调。⚠️ 池化对象必须在 kill()/setup() 里清干净 ——
-   * 漏清会让上一发的回调在新弹上触发。
+   * 不把 zone 池注入到投射物里,而是交出回调 —— 与旧实现的理由相同。
+   * ⚠️ 池化对象必须在 kill() 与 setup() 里清干净,
+   * 漏清会让上一发的回调在新弹上触发(表现为「一发火球炸出两片海」)。
    */
   public onImpact: ((x: number, y: number) => void) | null = null;
 
-  private enemyGroup!: Phaser.GameObjects.Group;
-
-  constructor(scene: Phaser.Scene, enemyGroup: Phaser.GameObjects.Group) {
-    super(scene, 0, 0, 'proj_knife');
-    this.enemyGroup = enemyGroup;
+  constructor(scene: Phaser.Scene) {
+    super(scene, 0, 0, 'proj_fireball');
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setActive(false).setVisible(false);
@@ -60,110 +43,78 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
     damage: number,
     speed: number,
     pierce: number,
-    weaponId: string,
-    areaMul: number,
+    spellId: string,
+    texture: string,
+    hitRadius: number,
     lifeMs: number,
-    mods: FireModifiers,
+    status: DamageOptions,
+    visualScale = 1,
   ): void {
     this.setPosition(x, y);
     this.setActive(true).setVisible(true);
     this.damage = damage;
-    this.speed = speed;
     this.pierceLeft = pierce;
-    this.weaponId = weaponId;
-    this.areaMul = areaMul;
+    this.spellId = spellId;
     this.lifeMs = lifeMs;
     this.bornAt = this.scene.time.now;
     this.isDead = false;
     this.hitSet.clear();
-    this.facing = angle;
-
-    // 池复用必须重置全部新增状态,否则会带上一次射击的残留
-    this.mods = mods;
-    this.homingTurn = mods.homingTurn;
-    this.homingTarget = null;
-    this.nextRetargetAt = 0;
-    this.chainLeft = mods.chainCount;
-    this.chainRadius = mods.chainRadius;
-    this.chainFalloff = mods.chainFalloff;
-    this.chainGlowMs = 0;
-    // 池复用必须重置回调,否则上一次发射的命中特效会在新弹上触发
+    this.status = status;
     this.onImpact = null;
     this.setAlpha(1);
-    // 索敌半径随弹速放大,快弹不会因为射程不够而追不上
-    this.searchRadius = 420 * (10 + this.speed / 40);
 
-    // 纹理键读配置,不为每门法术加一个分支
-    this.setTexture(WEAPONS[weaponId]?.texture ?? 'proj_knife');
+    this.setTexture(texture);
     this.setRotation(angle);
-    const s = Math.max(0.6, Math.min(2, areaMul));
+
+    // 贴图缩放只改外观 —— 碰撞圆必须维持 hitRadius 不变。
+    //
+    // ⚠️ Phaser 的 Body.updateBounds 从 frame.realWidth × scaleX 推导尺寸,
+    //    圆心半径会被 sprite 的 scale **乘一遍**(实测:scale=1.5 时传入 r=42.7
+    //    得到的就是世界半径 64)。所以想让贴图变宽而命中判定不动,
+    //    只能「半径 ÷ scale」——两个数必须成对给,见 SpellLevel.visualScale。
+    const s = Math.max(0.5, visualScale);
     this.setScale(s);
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
-    body.setCircle(HIT_RADIUS * s, -HIT_RADIUS * s, -HIT_RADIUS * s);
+
+    const r = Math.max(4, hitRadius) / s;
+    body.setCircle(r, -r, -r);
     // 关键:setCircle 的偏移是相对 body 顶点,而 body 顶点 = 精灵中心 - 贴图尺寸/2。
-    // 只写 setCircle(-r,-r) 会让碰撞圆落在贴图左上角,而不是中心 ——
-    // 对横向的剑形/刃形贴图(12x6、20x8)来说,圆心会偏到剑柄后面,
-    // 表现为「剑尖已经插进敌人却不判定命中」。
+    // 只写 setCircle(-r,-r) 会让碰撞圆落在贴图左上角,表现为「剑尖插进敌人却不判定命中」。
     const fw = this.frame.realWidth;
     const fh = this.frame.realHeight;
-    body.setOffset(fw / 2 - HIT_RADIUS * s, fh / 2 - HIT_RADIUS * s);
+    body.setOffset(fw / 2 - r, fh / 2 - r);
+
+    // ⚠️ 这里只能 updateBounds(),绝不能 updateFromGameObject()。
+    //
+    //    setCircle 内部是 `width = radius*2 * _sx`,而 `_sx` 是**上一次**
+    //    updateBounds 缓存的缩放 —— 池里上一发若是 1.55 倍的化魔指,这一发的
+    //    碰撞圆就会按那个缩放算错。updateBounds 重算 width/halfWidth,且
+    //    **不碰 position**;而 updateFromGameObject 会顺手按**上一发的 offset**
+    //    改写 position(= x + 旧offset - 原点),那个被污染的 position 随后被
+    //    postUpdate 写回精灵 —— 表现就是刚出手的弹在下一个物理步之前被挪走,
+    //    实测落在 2 倍坐标上、离玩家好几千像素。
+    //    「法术起点必须是人物当前位置」这条就是被那一行弄坏的。
+    body.updateBounds();
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
   }
 
   preUpdate(time: number, delta: number): void {
     super.preUpdate(time, delta);
     if (!this.active) return;
-    // lifeMs 用的是场景时钟,暂停期间若不拦截,飞行中的投射物会在玩家读升级面板时凭空过期
+    // lifeMs 走场景时钟。physics.world.pause() 不会停 preUpdate,
+    // 不拦截的话飞行中的弹会在玩家读悟道面板时凭空过期。
     if (this.scene.physics.world.isPaused) return;
-
-    // 连锁余辉
-    if (this.chainGlowMs > 0) {
-      this.chainGlowMs -= delta;
-      if (this.chainGlowMs <= 0) {
-        this.setAlpha(1);
-        this.chainGlowMs = 0;
-      }
-    }
-
     if (this.isDead || time - this.bornAt > this.lifeMs) {
       this.kill();
-      return;
     }
-
-    if (this.homingTurn > 0) {
-      this.steer(time, delta);
-    }
-  }
-
-  /**
-   * 每帧转向(一次 atan2 + 一次 RotateTo,很便宜)。
-   * 需要节流的是目标获取,不是转向 —— 否则每颗弹每帧扫一遍全部敌人。
-   */
-  private steer(time: number, delta: number): void {
-    const t = this.homingTarget;
-    if (!t || !t.active || t.isDead || time >= this.nextRetargetAt) {
-      this.homingTarget = findNearestEnemy(this.enemyGroup, this.x, this.y, this.searchRadius);
-      this.nextRetargetAt = time + this.mods.homingRetargetMs;
-    }
-    const target = this.homingTarget;
-    if (!target) return;
-
-    const desired = Math.atan2(target.y - this.y, target.x - this.x);
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    const cur = Math.atan2(body.velocity.y, body.velocity.x);
-    // RotateTo 走最短路径,正是转向需要的原语
-    const next = Phaser.Math.Angle.RotateTo(cur, desired, this.homingTurn * (delta / 1000));
-    body.setVelocity(Math.cos(next) * this.speed, Math.sin(next) * this.speed);
-    this.setRotation(next);
   }
 
   kill(): void {
     this.isDead = true;
-    this.homingTarget = null;
-    this.chainLeft = 0;
     this.onImpact = null;
+    this.status = {};
     this.setActive(false).setVisible(false);
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = false;
@@ -171,37 +122,18 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
   }
 
   /**
-   * 命中后:优先连锁,没有可连锁的目标才消耗穿透次数。
+   * 命中之后消耗一次穿透。
    *
-   * 连锁采用「原地重定向」而非「从命中点 fork 新弹」,因为后者需要把投射物池
-   * 注入投射物(回到池耗尽崩溃)、放大并发弹数、并让 hitSet 变成双向记账。
-   * 原地重定向复用现有 hitSet,零分配。
+   * 只有穿透用尽才死 —— 寂灭指 3 道指气 ×6 穿透是它唯一的输出方式,
+   * 打死一次就没了这条线的存在意义。
    */
   onHitEnemy(): void {
-    // 命中特效(进化态炸开火海)。每次命中都触发,不只是第一次 ——
-    // 穿透弹沿途每一段都该炸
+    // 火海沿途每一段都该炸,不只是第一次
     this.onImpact?.(this.x, this.y);
-
-    if (this.chainLeft > 0) {
-      const next = findNearestEnemy(this.enemyGroup, this.x, this.y, this.chainRadius, this.hitSet);
-      if (next) {
-        this.chainLeft--;
-        this.damage *= this.chainFalloff;
-        // 必须落在新目标身上,否则 Arcade overlap 在下一个物理步才触发
-        this.setPosition(next.x, next.y);
-        this.chainGlowMs = 120;
-        this.setAlpha(0.75);
-        // 连锁与追踪叠加时的涌现效果:每次跳跃都自动朝新目标追踪,无需特判
-        if (this.homingTurn > 0) {
-          this.homingTarget = next;
-          this.nextRetargetAt = 0;
-        }
-        return; // 不 kill,不递减穿透
-      }
-    }
     this.pierceLeft--;
-    if (this.pierceLeft < 0) {
-      this.kill();
-    }
+    if (this.pierceLeft < 0) this.kill();
   }
 }
+
+/** 供 GameScene 绑定伤害回调时用的窄类型 */
+export type ProjectileDamageFn = DamageApplier;
