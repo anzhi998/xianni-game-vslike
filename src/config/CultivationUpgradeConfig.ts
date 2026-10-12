@@ -1,11 +1,16 @@
 import type { Upgrade, UpgradeContext, UpgradeType } from '../types';
+import { META_PROGRESSION_ENABLED } from './FeatureConfig';
 
 /**
  * 悟道卡池里的「消耗品」
  *
  * 《build设计》3.3 给了卡池五类的权重(新法术 30 / 法术升级 22 / 新遗物 25 /
  * 遗物叠层 13 / 消耗品 10)。前四类都由当前状态动态生成(有没有空槽、这件满了没),
- * 只有消耗品是固定的三件 —— 它是「所有法术都满了」时的兜底,也是清场救命的手段。
+ * 只有消耗品是固定的几件 —— 它是「所有法术都满了」时的兜底,也是清场救命的手段。
+ *
+ * ⚠️ 表里的条目**不是全部都会进池**:标了 `metaOnly` 的会被
+ *    `FeatureConfig.META_PROGRESSION_ENABLED` 摘掉(当前是「灵石袋」,
+ *    理由见该条目的注释)。所以「三件」是设计书的原始配比,不是当前实际张数。
  *
  * 数值写在 effect() 里而不是常量表里:清屏符的伤害必须随等级涨,
  * 否则 30 分钟里它永远只能清掉 T1 杂兵,一张好牌都没有。
@@ -17,9 +22,18 @@ export interface ConsumableDef {
   description: string;
   iconColor: number;
   apply: (ctx: UpgradeContext) => void;
+  /** 收益完全落在局外成长上 —— 没接通前不进池(见 `FeatureConfig`) */
+  metaOnly?: boolean;
 }
 
-export const CONSUMABLES: ConsumableDef[] = [
+/**
+ * 消耗品的**全量表**(含被上闸的条目)。
+ *
+ * 与 `CONSUMABLES` 的分工同 `RelicConfig` 里 `RELICS` / `RELIC_IDS` 那一对:
+ * 这里是「定义了哪些」,`CONSUMABLES` 是「实际进池哪些」。
+ * 只被启动自检用来打印「哪些条目正在被挡着」,玩法侧一律读 `CONSUMABLES`。
+ */
+export const ALL_CONSUMABLES: ConsumableDef[] = [
   {
     id: 'heal_pill',
     name: '回春丹',
@@ -48,9 +62,27 @@ export const CONSUMABLES: ConsumableDef[] = [
     name: '灵石袋',
     description: '获得 50 灵石',
     iconColor: 0xffd070,
+    // ⚠️ `metaOnly` —— 它给的是**局外货币**，而局外强化树还没做，
+    //    所以这现在是一张**零收益**的牌：三选一里占掉一个位置，换回 50 个
+    //    花不出去的数字。而且它看起来最不像废牌 —— 卡面是明晃晃的「获得 50 灵石」，
+    //    玩家会以为是自己不会用。
+    metaOnly: true,
     apply: (ctx) => ctx.addCoins(50),
   },
 ];
+
+/**
+ * 当前**实际进池**的消耗品。
+ *
+ * 卡池的兜底补齐(`GameScene.buildInsightCards` 末尾)也读这个数组，所以摘掉
+ * 灵石袋之后「法术与遗物全满」时只剩回春丹 / 清屏符两张 —— 极端情况下三选一
+ * 的第三张会是前两张里的重复。这是**已知且可接受**的临时代价：
+ * 要凑满三张不重复的消耗品，就得临时造一张新消耗品，而那是玩法内容，
+ * 不该由「关掉一个无效选项」顺手带出来。局外成长接通后它会自己恢复。
+ */
+export const CONSUMABLES: ConsumableDef[] = ALL_CONSUMABLES.filter(
+  (c) => META_PROGRESSION_ENABLED || !c.metaOnly,
+);
 
 /**
  * 悟道卡池的权重表(设计书 3.3)。

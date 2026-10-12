@@ -34,12 +34,13 @@ import { getMap, DEFAULT_MAP_ID, HAZARD_FALLBACK_COLOR } from '../config/MapConf
 import type { MapDef } from '../config/MapConfig';
 import { SPELLS, BASE_SPELL_IDS, STARTING_SPELL, MAX_SPELL_SLOTS, resolveSpell,
   validateSpellReachability, validateEvolutionLinks, validateSpellKeys } from '../config/SpellConfig';
-import { RELICS, RELIC_IDS, RELIC_SLOTS, validateRelicReachability } from '../config/RelicConfig';
+import { RELICS, RELIC_IDS, POOL_RELIC_IDS, RELIC_SLOTS, validateRelicReachability } from '../config/RelicConfig';
 import { BOSSES, METEOR_COLOR, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
 import { validateBossSchedule } from '../config/BossConfig';
 import { EVOLUTIONS } from '../config/EvolutionConfig';
 import { HEAL_PILL_FRACTION, XP_PILL_FRACTION } from '../config/EliteConfig';
-import { CONSUMABLES, CARD_WEIGHTS, consumableCard } from '../config/CultivationUpgradeConfig';
+import { CONSUMABLES, ALL_CONSUMABLES, CARD_WEIGHTS, consumableCard } from '../config/CultivationUpgradeConfig';
+import { META_PROGRESSION_ENABLED } from '../config/FeatureConfig';
 import type { ChestQuality } from '../systems/ChestSystem';
 import { validateIntros, validateEnemyReachability, validateOpeningDifficulty } from '../config/WaveConfig';
 import { ENEMIES } from '../config/EnemyConfig';
@@ -618,6 +619,22 @@ export class GameScene extends Phaser.Scene {
     // 每件专属遗物都必须挂在一条进化链上,否则它占着卡池位置却换不到该换的融合
     const keyed = new Set(EVOLUTIONS.map((e) => e.keyRelic));
     warn('[遗物表] 这些专属遗物没有对应的进化配方:', validateRelicReachability(keyed));
+
+    // 被「局外成长没接通」挡在池外的条目 —— 这是**有意的**,所以只印一行 info
+    // 而不是 warning(每次启动都喊的警告,喊两天就没人看了)。
+    // 印它的理由:将来有人发现「灵石袋怎么抽不到」时,控制台里能直接读到答案,
+    // 不用去翻配置表再怀疑是自己改坏了。
+    if (!META_PROGRESSION_ENABLED) {
+      const gated = [
+        ...RELIC_IDS.filter((id) => RELICS[id].metaOnly).map((id) => `遗物·${RELICS[id].name}`),
+        ...ALL_CONSUMABLES.filter((c) => c.metaOnly).map((c) => `消耗品·${c.name}`),
+      ];
+      if (gated.length > 0) {
+        console.info(
+          `[局外成长] 尚未接通,以下条目已挡在卡池与掉落池外(收益无处结算): ${gated.join(' / ')}`,
+        );
+      }
+    }
   }
 
   // ===== 伤害 =====
@@ -1110,10 +1127,13 @@ export class GameScene extends Phaser.Scene {
    *
    * 专属遗物只在**已学会对应神通**时进池 —— 抽到「仙剑」却没学剑阵是废牌,
    * 这正是「专属遗物门槛」那条规则的实际收益。
+   *
+   * 读 `POOL_RELIC_IDS` 而不是 `RELIC_IDS`:后者是「定义了哪些遗物」(贴图枚举用),
+   * 前者才是「玩家能拿到哪些」—— 收益还没接上的那件(灵石（财）)在这里被挡掉。
    */
   private cardsNewRelic(): Upgrade[] {
     if (!this.relicSystem.hasFreeSlot()) return [];
-    return RELIC_IDS
+    return POOL_RELIC_IDS
       .filter((id) => !this.relicSystem.has(id) && !this.evolutionSystem.isRelicSpent(id))
       .filter((id) => {
         const ex = RELICS[id].exclusive;

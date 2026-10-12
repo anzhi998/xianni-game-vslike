@@ -1,4 +1,4 @@
-import { RELIC_IDS, RELICS } from './RelicConfig';
+import { POOL_RELIC_IDS, RELICS } from './RelicConfig';
 import { EVOLUTIONS } from './EvolutionConfig';
 import { NORMAL_MUTATION } from '../types';
 import type { DropEntry, EnemyMutation, EnemyResist } from '../types';
@@ -182,13 +182,16 @@ export function rollEliteDrops(spellIds: string[] = [], ownedRelics: string[] = 
  *   MISSING_WEIGHT(2) —— 没拿过的通用遗物。遗物栏 6 格要填满 + 每件要养到 5 级,
  *     新遗物始终有稀释重复值的价值。
  *   权重 1 —— 已经持有的(重复拾取 = 叠一级),仍然有效但不该占掉前两档的名额。
+ *
+ * 池子取 `POOL_RELIC_IDS` 而不是 `RELIC_IDS` —— 收益还没接上的那件
+ * (灵石（财）)不该掉在地上让玩家白捡一趟,见 `FeatureConfig`。
  */
 function pickRelic(spellIds: string[], owned: string[]): string | null {
   const missingKey: string[] = [];
   const missing: string[] = [];
   const ownedList: string[] = [];
 
-  for (const id of RELIC_IDS) {
+  for (const id of POOL_RELIC_IDS) {
     const cfg = RELICS[id];
     // 专属遗物有门槛:没学对应神通的钥匙不进池
     if (cfg.exclusive && !spellIds.includes(cfg.exclusive)) continue;

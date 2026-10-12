@@ -1,4 +1,5 @@
 import type { PlayerRelicMods, SpellRelicMods } from '../types';
+import { META_PROGRESSION_ENABLED } from './FeatureConfig';
 
 /**
  * 遗物表 —— 13 件,6 专属 + 7 通用,每件可叠 5 级,遗物槽 6 个
@@ -11,6 +12,10 @@ import type { PlayerRelicMods, SpellRelicMods } from '../types';
  *
  * 收槽到 5 个法术位之后,取舍是**两面都有**的:法术侧放弃 6 条路线里的 1 条,
  * 遗物侧放弃 13 件里的 7 件 —— 扩到六条路线没有稀释取舍,反而把它加深了。
+ *
+ * ⚠️ **当前实际入池 12 件**(`POOL_RELIC_IDS`)—— 「灵石（财）」标了 `metaOnly`,
+ *    局外成长接通前被挡在池外,所以现在的取舍是 12 选 6、放弃 6 件。
+ *    `RELICS` / `RELIC_IDS` 仍然是完整的 13 件(贴图按它枚举),别误删条目。
  *
  * ## 为什么每件遗物是一段函数而不是一组常量
  *
@@ -32,6 +37,13 @@ export interface RelicConfig {
   mod: (level: number) => { spell: Partial<SpellRelicMods>; player: Partial<PlayerRelicMods> };
   /** 卡面文案。同一个函数直接取当前等级的效果,保证描述与数值同源 */
   desc: (level: number) => string;
+  /**
+   * **收益完全落在局外成长上** —— 局外成长没接通前不入池(见 `FeatureConfig`)。
+   *
+   * 与 `exclusive` 是两回事:专属遗物是「有门槛」(没学对应神通就不给),
+   * metaOnly 是「**现在给了也没用**」。两者可以同时成立,但当前没有这种条目。
+   */
+  metaOnly?: boolean;
 }
 
 export const MAX_RELIC_LEVEL = 5;
@@ -213,15 +225,39 @@ export const RELICS: Record<string, RelicConfig> = {
     desc: (l) => `拾取半径 +${40 * l}%`,
   },
 
-  /** 灵石每级 +6% */
+  /**
+   * 灵石每级 +6%
+   *
+   * ⚠️ `metaOnly` —— 它加的是**局外货币**，而局外强化树还没做，
+   *    所以这件现在是一件**零收益**的遗物：占掉 6 格遗物栏里的一格，
+   *    换回一个花不出去的百分比。卡面文案看着完全正常（「灵石获取 +6%」确实生效），
+   *    玩家只会觉得「这局手气差」，根本定位不到是系统没做完。
+   *    局外成长接通后把 `FeatureConfig.META_PROGRESSION_ENABLED` 改回 true 即可回池。
+   */
   lingshi: {
-    id: 'lingshi', name: '灵石（财）', color: 0xffd070,
+    id: 'lingshi', name: '灵石（财）', color: 0xffd070, metaOnly: true,
     mod: (l) => ({ spell: {}, player: { coinMul: spellMul(l, 0.06) } }),
     desc: (l) => `灵石获取 +${6 * l}%`,
   },
 };
 
 export const RELIC_IDS = Object.keys(RELICS);
+
+/**
+ * **实际会出现在对局里**的遗物 id（卡池 + 精英掉落）。
+ *
+ * ⚠️ 与 `RELIC_IDS` 的分工，别混用：
+ *   - `RELIC_IDS` = 「**定义**了哪些遗物」。`AssetGenerator` / `AssetLoader`
+ *     按它枚举贴图键，少一个就会掉图 —— 所以它**必须**等于 `RELICS` 的全部键。
+ *   - `POOL_RELIC_IDS` = 「玩家**能拿到**哪些遗物」。卡池与掉落池读这个。
+ *
+ * 混用的后果很具体：若把 `RELIC_IDS` 直接砍掉灵石（财），贴图键 `pickup_relic_lingshi`
+ * 会跟着消失，于是「遗物图鉴」与调试面板里那件变成缺失贴图的绿方块 ——
+ * 一件只是暂时不入池的遗物不该在贴图管线里蒸发。
+ */
+export const POOL_RELIC_IDS = RELIC_IDS.filter(
+  (id) => META_PROGRESSION_ENABLED || !RELICS[id].metaOnly,
+);
 
 export function relicName(id: string): string {
   return RELICS[id]?.name ?? id;
@@ -245,7 +281,7 @@ export function isRelicKey(id: string): boolean {
  * 抽到「仙剑」却没学剑阵是废牌(设计书 3.3 规则 2)。
  */
 export function exclusiveRelicsFor(spellId: string): string[] {
-  return RELIC_IDS.filter((id) => RELICS[id].exclusive === spellId);
+  return POOL_RELIC_IDS.filter((id) => RELICS[id].exclusive === spellId);
 }
 
 /**
