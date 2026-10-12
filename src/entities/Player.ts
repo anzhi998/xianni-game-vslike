@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { SPRITE_ART_SCALE } from '../config/GameConfig';
 
 /**
  * 四个朝向对应的纹理键。
@@ -65,6 +66,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     // 只设 body 尺寸,不要手写 setOffset。
     // setSize 的 center 参数默认 true,会把碰撞盒对齐到精灵中心;
     // 再叠一句 setOffset(-5,-6) 会把它推到精灵上方,导致碰撞盒与外观错位。
+    //
+    // 人物大小只写 setScale 一处。
+    //
+    // ⚠️ `setBodySize` 和 `setCircle` 一样收的是**未缩放的源像素**
+    //    (`Body.setSize` 里 `this.width = sourceWidth * this._sx`),
+    //    所以碰撞盒**不能**再乘一次 SPRITE_ART_SCALE —— 那是平方,
+    //    人物会看着 1.2 倍、判定却是 1.44 倍,表现是「没碰到就掉血」。
+    //    写下 10×12 这两个数,世界里的判定自然就是 12×14.4。
+    this.setScale(SPRITE_ART_SCALE);
     this.setBodySize(10, 12, true);
     this.setDepth(100);
   }

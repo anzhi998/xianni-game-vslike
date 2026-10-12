@@ -6,7 +6,7 @@ import {
 } from '../config/WaveConfig';
 import { rollEliteMutation, makeEliteMutation, MAX_LIVE_ELITES } from '../config/EliteConfig';
 import { NORMAL_MUTATION } from '../types';
-import { WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig';
+import { WORLD_WIDTH, WORLD_HEIGHT, viewRadius } from '../config/GameConfig';
 import type { EnemyMutation } from '../types';
 
 /**
@@ -120,10 +120,18 @@ export class SpawnSystem {
 
     // 潜行怪走单独的生成规则:它们在**屏内任意角度**现身,而不是从屏外走进来。
     // 这是「穿墙潜行」在代码里的全部含义 ——「后方」这个概念的失效不靠贴图,
-    // 靠的是玩家发现它出现在自己身后 300 像素处。
+    // 靠的是玩家发现它出现在自己身后几百像素处。
+    //
+    // ⚠️ 两个距离都以 `viewRadius()`(一屏半对角线)为单位:镜头拉近之后
+    //    「屏内」本身变小了,写死像素会让潜行怪直接刷到屏幕外去 ——
+    //    那正是「穿墙潜行」赖以成立的那一眼消失的地方,而且不报错。
+    //    括号里是 zoom = 1 时的等价像素。
     const stealth = cfg?.approach === 'stealth';
     const angle = Math.random() * Math.PI * 2;
-    const dist = stealth ? 300 + Math.random() * 400 : 700 + Math.random() * 300;
+    const r = viewRadius();
+    const dist = stealth
+      ? r * (0.41 + Math.random() * 0.55)   // 300–700px:屏内
+      : r * (0.96 + Math.random() * 0.42);  // 700–1000px:屏外一点点
     let x = player.x + Math.cos(angle) * dist;
     let y = player.y + Math.sin(angle) * dist;
     // 限制在世界范围内

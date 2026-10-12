@@ -2,7 +2,7 @@ import type { AttackForm } from '../types';
 import { EVOLUTIONS } from './EvolutionConfig';
 
 /**
- * 神通表 —— 五门法术,每门一张 1–8 级的固定数值表
+ * 神通表 —— 六门法术,每门一张 1–8 级的固定数值表
  *
  * ## 为什么没有「基础值 × 等级倍率」
  *
@@ -34,6 +34,21 @@ export interface FireSeaDef {
   dps: number;
   /** 同一点最多叠几层 */
   maxStacks: number;
+  /**
+   * 地面火海贴图。
+   *
+   * ⚠️ 与投射物分开命名(`fx_fire_sea`,不是 `proj_nine_nether_fire`):
+   *    飞行中的火球与地上的火海是**两件事**,共一张图会让「打中了没有」
+   *    与「地上烧着没有」在屏幕上糊成一团。
+   *
+   * ⚠️ **画布边界 = 灼烧半径**。Zone 把这张图按「直径 = 2 × 半径」缩放,
+   *    所以画的火焰必须铺到画布四边 —— 画小了,玩家会站在看着安全的地方
+   *    持续掉血,而那是这个项目最不能接受的一类错(视觉与判定不符)。
+   *    具体规则见 `docs/美术素材规格.md` 的「地面持续特效」一节。
+   *
+   * 素材缺失时 Zone 自动退回 Graphics 画的圆 + 环,不会变成绿方块。
+   */
+  texture: string;
 }
 
 /** 周期放射状剑气(斩罗决)。用投射物池发射,不新建实体 */
@@ -54,7 +69,8 @@ export interface BurstDef {
  * 一门神通在某一级的全部数值。行内字段直接就是最终值。
  *
  * 通用字段对所有形态有意义但只有对应形态会读:
- * count 对直射=弹数、对环绕=飞剑数、对连锁=雷弧道数、对扇形=命中上限。
+ * count 对直射=弹数、对环绕=飞剑数、对连锁=雷弧道数、对扇形=命中上限、
+ * **对弧带=同时放出的龙卷道数**(不是命中上限 —— 弧带没有命中上限)。
  */
 export interface SpellLevel {
   damage: number;
@@ -135,6 +151,53 @@ export interface SpellLevel {
    * 放在第 8 级则是「你把这条线走完了」的兑现。
    */
   clearsShots?: boolean;
+
+  // ---- 弧带 ----
+  /**
+   * 弧角(弧度)。龙卷 180° → 220°,仙术·呼风 360°(全周)。
+   *
+   * ⚠️ 它是**整次释放的总张角**,不是单道龙卷的张角 ——
+   *    `count` 道龙卷把它均分成 `count` 段同心弧(见 WeaponSystem.fireArc)。
+   *    呼风的「每 45° 一道」正是 360° ÷ 8 道,与设计书那句一字不差,
+   *    这就是这条规则成立的证据。
+   */
+  arcSpan?: number;
+  /** 弧半径(格):弧带从脚下旋卷出去的最远距离 */
+  arcRadiusGrid?: number;
+  /**
+   * 整次释放里,弧带**绕玩家转过的总角度**(弧度)。
+   *
+   * ⚠️ 这是「弧形卷进」四个字的落点。没有它,弧带只会沿半径**直线**飞出去 ——
+   *    形状是个环带,弹道却是根直线,玩家会直接说「弹道不是弧形」。
+   *    多个道数扫过它的弧径,轨迹才真的是螺旋。
+   *
+   * 设计书对多道龙卷的判词是「**同圆心、同角速度**、互不重叠」——
+   * 同角速度这句只有在弧带会转的前提下才有意义,而**一起转**恰好保证了
+   * 互不重叠(8 道始终相差 45°,不会挤到一起)。
+   */
+  arcSweep?: number;
+  /**
+   * 牵引距离(格):被刮过的敌人被拉向弧线内侧多少。
+   *
+   * 方向与厚土术的推挤**相反**(一个聚、一个散),两者同时携带会互相抵消 ——
+   * 这是刻意的反制关系,不要为了「看起来更强」把两者统一。
+   */
+  pullGrid?: number;
+  /**
+   * 主龙:在正前方额外放出的一道,伤害 × 本值。0 = 本级没有主龙。
+   *
+   * 只在仙术·呼风上出现。它存在的理由是「弧向由走位决定、不可瞄准」,
+   * 主龙是整套术法里**唯一能主动瞄准的一道** —— 是给「想用呼风打单点」
+   * 的玩家留的一条窄路,而不是又一个平摊伤害的第八道。
+   */
+  mainDragonMul?: number;
+  /**
+   * 吹熄:本次命中把血量低于该比例的敌人直接抹除(受即死抗性影响)。0 = 没有。
+   *
+   * 只在仙术·呼风上出现。它**不产生额外伤害、不影响掉落** ——
+   * 只压缩清尾时间,不动经济(避免与「灵石(财)」遗物抢生态)。
+   */
+  executeBelow?: number;
 
   // ---- 连锁 ----
   jumps?: number;
@@ -225,6 +288,13 @@ export interface ResolvedSpell {
   barrierMs: number;
   clearsShots: boolean;
 
+  arcSpan: number;
+  arcSweep: number;
+  arcRadius: number;
+  pullPx: number;
+  mainDragonMul: number;
+  executeBelow: number;
+
   jumps: number;
   chainRange: number;
   falloff: number;
@@ -242,11 +312,14 @@ export const MAX_SPELL_LEVEL = 8;
 /**
  * 法术槽的**上限**(不是开局槽数)。
  *
- * ⚠️ 槽位阶梯住在 RealmConfig —— 开局 2 格,筑基/结丹/元婴/化神各 +1。
- *    这里只声明天花板,因为超过它之后再加槽位也没有第五门以上的法术可放。
+ * ⚠️ 槽位阶梯住在 RealmConfig —— 开局 2 格,筑基/结丹/元婴各 +1,之后停在 5。
+ *    这里只声明天花板,给调试面板的「装满神通」用。
  *    WeaponSystem 的当前上限由 RealmSystem 在突破时推进。
+ *
+ * ⚠️ **法术有 6 门,槽只有 5 个**(设计书 3.5 的收槽,不是配错了):
+ *    玩家必须放弃一条路线。化神不再 +1 法位,详见 RealmConfig 的「为什么收槽」。
  */
-export const MAX_SPELL_SLOTS = 6;
+export const MAX_SPELL_SLOTS = 5;
 
 /**
  * 开局神通。设计书第一节:主角王林的起始法术是火球术。
@@ -299,7 +372,7 @@ export const SPELLS: Record<string, SpellDef> = {
       {
         damage: 45, cooldown: 1.10, count: 4, pierce: 0, area: 1.2, speed: 10, life: 0.9,
         burn: { dps: 10, ms: 4000 },
-        fireSea: { radiusGrid: 1.2, lifeMs: 3000, dps: 28, maxStacks: 3 },
+        fireSea: { radiusGrid: 1.2, lifeMs: 3000, dps: 28, maxStacks: 3, texture: 'fx_fire_sea' },
       },
     ],
   },
@@ -546,6 +619,86 @@ export const SPELLS: Record<string, SpellDef> = {
       },
     ],
   },
+
+  // ===== ⑥ 龙卷 · 仙帝传道流 =====
+
+  /**
+   * 龙卷 —— 自脚下起步、向外旋卷的弧带,把沿途的敌人往弧线内侧搅。
+   *
+   * ## 命中模型(这一段决定了下面每一个数字)
+   *
+   * 一条弧带是一段**有厚度的圆弧**,从半径 0 向外推进到弧半径为止。
+   * 敌人只要在自己的那一段弧里,就会被刮**两次**:弧线切入时一次,
+   * 弧带卷过其位置时一次(前缘进、后缘出)。因此
+   *
+   *     单体 DPS = 道数 × 单道伤害 × 2 ÷ 冷却
+   *
+   * 满级 3 × 22 × 2 ÷ 1.30 ≈ 101.5,对齐「8 级 ≈ 100–120」基准。
+   *
+   * ## 为什么它与厚土术是两种东西
+   *
+   * 沙浪是**实心扇面**逐段推、命中有上限、把怪**往外推**;龙卷是**薄弧**整片
+   * 一次飞出去、没有命中上限、把怪**往里拉**。方向相反是刻意的:
+   * 一个聚、一个散,两者同时携带会互相抵消。
+   *
+   * ## 走位就是瞄准
+   *
+   * 弧向由**释放瞬间的移动方向**决定 —— 往左走一步再放,它就卷向左侧。
+   * 全体系只有它把「去哪打」交给玩家的脚下动作。
+   */
+  longjuan: {
+    id: 'longjuan', name: '龙卷',
+    desc: '自脚下卷出一道弧形龙卷,沿途把敌人往弧线内侧搅成一团。走位决定它卷向哪边。',
+    // 弧带本体是 Graphics 现场画的,但这张图**有消费者**:
+    // Tornado 把它画在弧带前缘当「龙头」(见 Tornado.prepareHead)。
+    // 这与 cone / chain 那两条死键不同 —— 那两条的 texture 确实没人读。
+    form: 'arc', texture: 'proj_longjuan', color: 0x5fd9c0,
+    keyRelic: 'xiandi_huazhou',
+    levels: [
+      { damage: 11, cooldown: 2.20, count: 1, pierce: 0, area: 1, speed: 0, life: 1.10, arcSweep: 0.7854, arcRadiusGrid: 3.0, arcSpan: Math.PI },
+      { damage: 14, cooldown: 2.00, count: 1, pierce: 0, area: 1, speed: 0, life: 1.05, arcSweep: 0.7854, arcRadiusGrid: 3.1, arcSpan: 3.3161 },
+      { damage: 16, cooldown: 1.90, count: 1, pierce: 0, area: 1, speed: 0, life: 1.00, arcSweep: 0.7854, arcRadiusGrid: 3.2, arcSpan: 3.4907, pullGrid: 0.3, note: '命中附带牵引:把散开的怪流搅向弧线内侧' },
+      { damage: 14, cooldown: 1.80, count: 2, pierce: 0, area: 1, speed: 0, life: 1.00, arcSweep: 0.7854, arcRadiusGrid: 3.3, arcSpan: 3.4907, pullGrid: 0.4, note: '龙卷增至 2 道,单道伤害下调换取覆盖面' },
+      { damage: 16, cooldown: 1.70, count: 2, pierce: 0, area: 1, speed: 0, life: 0.95, arcSweep: 0.7854, arcRadiusGrid: 3.4, arcSpan: 3.6652, pullGrid: 0.5 },
+      { damage: 18, cooldown: 1.60, count: 2, pierce: 0, area: 1, speed: 0, life: 0.95, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.6652, pullGrid: 0.6 },
+      { damage: 18, cooldown: 1.45, count: 3, pierce: 0, area: 1, speed: 0, life: 0.90, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.8397, pullGrid: 0.7, note: '龙卷增至 3 道,弧面铺到 220°' },
+      { damage: 22, cooldown: 1.30, count: 3, pierce: 0, area: 1, speed: 0, life: 0.90, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.8397, pullGrid: 0.8 },
+    ],
+  },
+
+  /**
+   * 仙术·呼风 —— 龙卷 8 级 + 仙帝传道画轴 5 级。
+   *
+   * 一次释放 **8 道黑龙**,以自身为心每 45° 一道,覆盖全周;
+   * 单道伤害 26(= 满级 22 × 画轴 1.5 × **0.8 分散折扣**);
+   * 画轴满级额外放出第 9 道「主龙」—— 固定在正前方、伤害 ×1.5(= 39);
+   * 新增「吹熄」:命中生命低于 20% 的敌人直接抹除。
+   *
+   * ⚠️ **配表口径:这是六条路线里唯一「进化后单体反而更弱」的一条**。
+   *    单体 101.5 → 30.6(正前吃主龙也只有 45.9),全体系最低。
+   *    这不是数值事故,是「8 道分散」的固有代价:进化把单体这个维度
+   *    彻底交了出去,换回全周覆盖 + 清尾效率。常态群伤 229 ≈ 基础单体的
+   *    ×2.26,正好落在全局「进化约 ×2.2」的基准上。
+   *    若实测手感崩盘,旋钮只有一个:把分散折扣 0.8 提到 1.0
+   *    (单道 26 → 33),**只调这一个系数,不动结构**。
+   */
+  hufeng: {
+    id: 'hufeng', name: '仙术·呼风',
+    desc: '八道黑龙自脚下向外旋卷,覆盖全周;正前方多出一道主龙,残血者当场吹熄。',
+    // ⚠️ 颜色以**素材**为准:proj_hufeng 与 icon_spell_hufeng 都是青碧系
+    //    (H≈163°),原先这里写的 0x3a2f66 是配表时凭空定的「黑龙紫」,
+    //    与两张图都差 89° 色相 —— 那不是设计,是没对过图。
+    //    取 #2f8f70 而不是照抄图标均值(#1cb48a):它要比龙卷的 #5fd9c0
+    //    更深一档,这样同色的进化对在 HUD 上靠明度也能分,不必只靠剪影。
+    form: 'arc', texture: 'proj_hufeng', color: 0x2f8f70,
+    levels: [
+      {
+        damage: 26, cooldown: 1.70, count: 8, pierce: 0, area: 1, speed: 0, life: 0.90,
+        arcSweep: 1.5708, arcRadiusGrid: 3.5, arcSpan: Math.PI * 2, pullGrid: 0.8,
+        mainDragonMul: 1.5, executeBelow: 0.20,
+      },
+    ],
+  },
 };
 
 /**
@@ -601,6 +754,12 @@ export function resolveSpell(id: string, level: number): ResolvedSpell | null {
     pushPx: (r.pushGrid ?? 0) * g,
     barrierMs: r.barrierMs ?? 0,
     clearsShots: r.clearsShots ?? false,
+    arcSpan: r.arcSpan ?? 0,
+    arcSweep: r.arcSweep ?? 0,
+    arcRadius: (r.arcRadiusGrid ?? 0) * g,
+    pullPx: (r.pullGrid ?? 0) * g,
+    mainDragonMul: r.mainDragonMul ?? 0,
+    executeBelow: r.executeBelow ?? 0,
     jumps: r.jumps ?? 0,
     chainRange: (r.chainRangeGrid ?? 0) * g,
     falloff: r.falloff ?? 1,
@@ -613,7 +772,7 @@ export function resolveSpell(id: string, level: number): ResolvedSpell | null {
   };
 }
 
-/** 五门基础法术(不含五个进化形态) */
+/** 六门基础法术(不含六个进化形态) */
 export const BASE_SPELL_IDS = Object.keys(SPELLS).filter((id) => !EVOLVED_IDS.has(id));
 
 /**

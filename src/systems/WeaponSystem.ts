@@ -5,6 +5,7 @@ import { Projectile } from '../entities/Projectile';
 import { Orbiter } from '../entities/attacks/Orbiter';
 import { Zone } from '../entities/attacks/Zone';
 import { SandWave } from '../entities/attacks/SandWave';
+import { Tornado } from '../entities/attacks/Tornado';
 import { ChainBolt } from '../entities/attacks/ChainBolt';
 import { Barrier } from '../entities/attacks/Barrier';
 import { resolveSpell, MAX_SPELL_LEVEL, SPELLS } from '../config/SpellConfig';
@@ -13,6 +14,7 @@ import type { ResolvedSpell } from '../config/SpellConfig';
 import type { RelicSystem } from './RelicSystem';
 import type { AttackForm, DamageOptions, SpellRelicMods } from '../types';
 import { findNearestEnemy } from '../utils/Targeting';
+import { viewRadius } from '../config/GameConfig';
 import { MathUtils } from '../utils/MathUtils';
 
 /** 神通栏里的一门神通 */
@@ -32,6 +34,7 @@ export interface WeaponPools {
   orbiters: Phaser.GameObjects.Group;
   zones: Phaser.GameObjects.Group;
   sandWaves: Phaser.GameObjects.Group;
+  tornadoPool: Phaser.GameObjects.Group;
   chainBolts: Phaser.GameObjects.Group;
   barriers: Phaser.GameObjects.Group;
 }
@@ -50,9 +53,23 @@ export class WeaponSystem {
   /** 多发同时命中时默认的总张角(弧度) */
   private static readonly DEFAULT_SPREAD = 0.16;
   /** 自动索敌的搜索半径 */
-  private static readonly TARGET_RADIUS = 620;
+  /**
+   * 自动索敌的搜索半径,以「一屏半对角线」为单位(zoom = 1 时 620px ≈ 0.85 倍)。
+   *
+   * ⚠️ 它必须跟着镜头缩放:镜头拉近之后一屏变窄,还按旧像素搜的话,
+   *    火球术会去锁定**玩家根本看不见**的敌人 ——「自动索敌」变成
+   *    「自动打空气」,而且不报错,只是偶尔朝一个空方向开火。
+   */
+  private static get TARGET_RADIUS(): number {
+    return viewRadius() * 0.85;
+  }
   /** 推挤速度 = 推距 ÷ 这个时长。写在常量里是为了让「推 1.2 格」有个统一的手感基准 */
   private static readonly PUSH_SECONDS = 0.25;
+  /**
+   * 牵引时长。与 PUSH_SECONDS 共用同一个基准 —— 推 0.4 格与拉 0.4 格
+   * 必须一样的手感,否则两条路线一对比就显得其中一条「更黏」
+   */
+  private static readonly PULL_SECONDS = 0.25;
   /** 火海叠层判定:落点在这个距离内的火海视为同一片 */
   private static readonly SEA_MERGE_PX = 48;
 
@@ -214,6 +231,7 @@ export class WeaponSystem {
     switch (sp.form) {
       case 'orbiter': this.fireOrbiter(sp, mods); break;
       case 'cone': this.fireCone(sp, mods); break;
+      case 'arc': this.fireArc(sp, mods); break;
       case 'chain': this.fireChain(sp, mods); break;
       case 'projectile': this.fireProjectile(sp, mods); break;
       case 'zone': this.fireZone(sp, mods); break;
@@ -281,6 +299,7 @@ export class WeaponSystem {
       burn: sp.burn,
       slow,
       shock: null,
+      executeBelow: sp.executeBelow,
     };
   }
 
@@ -345,7 +364,7 @@ export class WeaponSystem {
 
     const zone = this.pools.zones.get() as Zone;
     if (!zone) return;
-    zone.setup(x, y, 0, radius, sea.lifeMs, sea.dps, sp.color, sea.maxStacks);
+    zone.setup(x, y, 0, radius, sea.lifeMs, sea.dps, sp.color, sea.maxStacks, sea.texture);
   }
 
   /** 环绕 */
@@ -411,6 +430,79 @@ export class WeaponSystem {
           sp.coneRadius * 0.92,
           facing, sp.coneSpan,
           sp.barrierMs, 40, 600, 0x8a6a3a,
+        );
+      }
+    }
+  }
+
+  /**
+   * 弧带推进 + 牵引 + (呼风)主龙与吹熄
+   *
+   * ## 道数怎么分弧
+   *
+   * `arcSpan` 是**整次释放的总张角**,`count` 道龙卷把它均分成同心弧。
+   * 基础形态 1 道 = 一整条弧;3 道 = 三段 73° 的同心弧;
+   * 仙术·呼风 8 道 × 360° ÷ 8 = **每 45° 一道**,与设计书那句话一字不差 ——
+   * 这条均分规则不是推出来的,是呼风的 8 道 × 45° 反过来证实的。
+   *
+   * 「同心弧」而不是「都朝同一个方向」是必须的:同向多道会完全重叠,
+   * 于是 3 道只是把同一片弧打了 3 遍(而且各自结算 2 次 = 6 次),
+   * 道数就变成了纯伤害倍率,而不是覆盖面。
+   */
+  private fireArc(sp: ResolvedSpell, mods: SpellRelicMods): void {
+    // 弧向由释放瞬间的移动方向决定 —— 全体系唯一把走位当瞄准用的形态
+    const facing = Math.atan2(this.player.facingY, this.player.facingX);
+    const damage = this.damageOf(sp, mods);
+    const status = this.statusOf(sp, mods);
+    const count = Math.max(1, sp.count);
+    // 画轴的弧角加成作用在**总张角**上:它买的是覆盖面,不是每道的密度
+    const span = Math.min(Math.PI * 2, sp.arcSpan * mods.arcSpanMul);
+    const sub = span / count;
+    const start = facing - span / 2;
+    const pullSpeed = sp.pullPx / WeaponSystem.PULL_SECONDS;
+    const pullMs = WeaponSystem.PULL_SECONDS * 1000;
+    // 本次释放的**共用**命中表:同一目标最多结算 2 次,不论被几道刮到。
+    // 建在这里而不是每道一张,理由见 Tornado.hitCounts 的长注释
+    const sharedHits = new Map<Enemy, number>();
+
+    for (let i = 0; i < count; i++) {
+      const t = this.pools.tornadoPool.get() as Tornado;
+      // 池耗尽时返回 null(有限 maxSize),少放一道就少放一道,不抛
+      if (!t) continue;
+      t.setup(
+        this.player.x, this.player.y,
+        start + sub * (i + 0.5), sub,
+        sp.arcRadius,
+        damage,
+        pullSpeed, pullMs,
+        sp.lifeMs,
+        sp.color,
+        // 弧角加成只作用于「整次释放的总张角」,弧带的**旋卷量**不随遗物变 ——
+        // 画轴买的是覆盖面,不是转圈数
+        sp.arcSweep,
+        sharedHits,
+        sp.texture,
+        status,
+      );
+    }
+
+    // 主龙:固定在正前方、伤害 ×1.5 的**第 9 道**。
+    // 它刻意与八道黑龙重叠在正前这一段 —— 因为整套术法里只有它是可瞄准的
+    if (sp.mainDragonMul > 0) {
+      const t = this.pools.tornadoPool.get() as Tornado;
+      if (t) {
+        t.setup(
+          this.player.x, this.player.y,
+          facing, sub,
+          sp.arcRadius,
+          damage * sp.mainDragonMul,
+          pullSpeed, pullMs,
+          sp.lifeMs,
+          sp.color,
+          sp.arcSweep,
+          sharedHits,
+          sp.texture,
+          status,
         );
       }
     }

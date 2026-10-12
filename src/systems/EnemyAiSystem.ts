@@ -4,7 +4,7 @@ import type { Player } from '../entities/Player';
 import type { Pickup } from '../entities/Pickup';
 import { ENEMIES } from '../config/EnemyConfig';
 import type { Barrier } from '../entities/attacks/Barrier';
-import { WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig';
+import { WORLD_WIDTH, WORLD_HEIGHT, viewRadius } from '../config/GameConfig';
 
 /**
  * 逼近行为系统 ——《怪物设计》文档的脊椎
@@ -25,12 +25,18 @@ import { WORLD_WIDTH, WORLD_HEIGHT } from '../config/GameConfig';
  *   - 精英不可回收 ——「绕开精英继续跑」不成立
  */
 
-/** 普通怪离玩家这个距离就回收(px) */
-export const DESPAWN_RADIUS = 1600;
-/** 精英超过这个距离不再追,改为传回屏幕(px) */
-export const ELITE_LEASH_RADIUS = 1200;
-/** 精英传回时落在玩家周围的环半径(px) */
-const ELITE_RETURN_RADIUS = 600;
+/**
+ * 下面三个半径都是**按屏幕调的**,所以它们以 `viewRadius()`(一屏的半对角线)
+ * 为单位写,而不是写死像素 —— 镜头拉近(`CAMERA_ZOOM`)时必须跟着缩放,
+ * 否则会出现「精英飘到屏幕外三倍远才被拽回来」这种只在画面边缘才看得见的偏差。
+ *
+ * 括号里是 zoom = 1 时的等价像素,留着是为了让配表的人认得出原来的手感。
+ */
+export const DESPAWN_RADIUS = (): number => viewRadius() * 2.20;      // 1600px
+/** 精英超过这个距离不再追,改为传回屏幕 */
+export const ELITE_LEASH_RADIUS = (): number => viewRadius() * 1.65;  // 1200px
+/** 精英传回时落在玩家周围的环半径 */
+const ELITE_RETURN_RADIUS = (): number => viewRadius() * 0.83;        // 600px
 /** 引路尸把周围的怪拖到它身后的速度(px/s) */
 const DRAG_SPEED = 130;
 
@@ -117,9 +123,12 @@ export class EnemyAiSystem {
   /**
    * 减速 / 击退 / 眩晕的统一结算。
    *
-   * 顺序是 v = 转向 ×(1-减速) + 击退偏移,眩晕则整份清零。
+   * 顺序是 v = 转向 ×(1-减速) + 击退偏移 + 牵引偏移,眩晕则整份清零。
    * 这个顺序不能改:击退是「外力」,应该跑在减速后面 —— 否则一只被推的怪
    * 会在推力最大时因为减速而几乎不动,厚土术看起来就成了无伤害。
+   *
+   * ⚠️ 击退与牵引**必须分开两组字段、相加**:设计书把这两条路线写成
+   *    互相反制(一个聚一个散),相加才是「抵消」,共用字段就是「谁后出手谁赢」。
    */
   private applyStatusMotion(e: Enemy, now: number): void {
     const body = e.body as Phaser.Physics.Arcade.Body;
@@ -132,13 +141,22 @@ export class EnemyAiSystem {
     if (now < e.stunnedUntil) {
       vx = 0;
       vy = 0;
-    } else if (now < e.knockUntil) {
-      vx += e.knockX;
-      vy += e.knockY;
     } else {
-      // 到期就清零。留着不清会让一次旧击退在下次 applyKnock 之前一直挂着
-      e.knockX = 0;
-      e.knockY = 0;
+      if (now < e.knockUntil) {
+        vx += e.knockX;
+        vy += e.knockY;
+      } else {
+        // 到期就清零。留着不清会让一次旧击退在下次 applyKnock 之前一直挂着
+        e.knockX = 0;
+        e.knockY = 0;
+      }
+      if (now < e.pullUntil) {
+        vx += e.pullX;
+        vy += e.pullY;
+      } else {
+        e.pullX = 0;
+        e.pullY = 0;
+      }
     }
     body.setVelocity(vx, vy);
   }
@@ -182,19 +200,22 @@ export class EnemyAiSystem {
 
     // 首领与精英同样不回收:玩家可以绕着 Boss 跑圈拉扯,那正是战斗的一部分
     if (e.isElite || e.bossKey) {
-      if (d2 <= ELITE_LEASH_RADIUS * ELITE_LEASH_RADIUS) return;
-      // 沿「玩家 → 精英」的方向放到玩家周围 600px 处,并钳进世界边界。
+      const leash = ELITE_LEASH_RADIUS();
+      if (d2 <= leash * leash) return;
+      // 沿「玩家 → 精英」的方向放到玩家周围的一圈处,并钳进世界边界。
       // 用当前方向而不是随机角度:玩家能预期它从原来那一侧回来
       const len = Math.sqrt(d2) || 1;
-      const nx = Phaser.Math.Clamp(px + (dx / len) * ELITE_RETURN_RADIUS, 40, WORLD_WIDTH - 40);
-      const ny = Phaser.Math.Clamp(py + (dy / len) * ELITE_RETURN_RADIUS, 40, WORLD_HEIGHT - 40);
+      const ring = ELITE_RETURN_RADIUS();
+      const nx = Phaser.Math.Clamp(px + (dx / len) * ring, 40, WORLD_WIDTH - 40);
+      const ny = Phaser.Math.Clamp(py + (dy / len) * ring, 40, WORLD_HEIGHT - 40);
       // body.reset 而不是 setPosition:前者同时同步刚体位置并清掉位移增量,
       // 后者只动精灵,刚体要等 postUpdate 才跟上 —— 那一帧的重叠判定会用旧坐标
       (e.body as Phaser.Physics.Arcade.Body).reset(nx, ny);
       return;
     }
 
-    if (d2 > DESPAWN_RADIUS * DESPAWN_RADIUS) {
+    const despawn = DESPAWN_RADIUS();
+    if (d2 > despawn * despawn) {
       e.kill();
     }
   }

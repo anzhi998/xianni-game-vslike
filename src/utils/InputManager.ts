@@ -8,6 +8,7 @@
  * - 边界:窗口失焦/场景销毁时全部清零,避免按键卡住
  */
 import Phaser from 'phaser';
+import { CAMERA_ZOOM } from '../config/GameConfig';
 
 export class InputManager {
   // 最终合并输出(供 GameScene 读取)
@@ -175,6 +176,12 @@ export class InputManager {
       this.joystickThumb = this.scene.add.circle(this.joystickBaseX, this.joystickBaseY, 24, 0xffffff, 0.4)
         .setScrollFactor(0)
         .setDepth(1001);
+      // ⚠️ 摇杆按 `pointer.x/y`(屏幕坐标)摆放,而 scrollFactor 0 只挡掉卷动、
+      //    **不挡相机缩放** —— 镜头一放大,这两个圆会连位置带尺寸一起被乘,
+      //    摇杆就跑到手指的右下方去了。反向缩放回去,它们才真的贴在拇指上。
+      //    遮天的暗角用的是同一个办法(见 GameScene.setupVeil)。
+      this.joystickBase.setScale(1 / CAMERA_ZOOM);
+      this.joystickThumb.setScale(1 / CAMERA_ZOOM);
     };
 
     this.boundOnPointerMove = (pointer: Phaser.Input.Pointer) => {

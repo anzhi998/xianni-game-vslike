@@ -1,5 +1,5 @@
 /**
- * 遗物系统 —— 12 件遗物,6 个槽,每件 5 级
+ * 遗物系统 —— 13 件遗物,6 个槽,每件 5 级
  *
  * 为什么合并结果要缓存:开火是每帧每门神通各调一次的路径,
  * 遍历 6 件遗物各跑一遍 mod(level) 在 60fps 下白烧几千次闭包调用。
@@ -140,7 +140,7 @@ export class RelicSystem {
   /**
    * 合成规则(只此一处,写清楚以便后续扩展时统一遵守):
    *   - 计数相加(飞剑、穿透、感电层数、感电时长)
-   *   - 倍率相乘(伤害、推距)
+   *   - 倍率相乘(伤害、推距、弧角)
    *   - 减法取最小(护甲穿透)
    *
    * 攻速与冷却**共用同一个冷却乘区**:两者最终都作用在
@@ -179,6 +179,7 @@ export class RelicSystem {
       if (!s) continue;
       m.damageMul *= s.damageMul ?? 1;
       m.pushMul *= s.pushMul ?? 1;
+      m.arcSpanMul *= s.arcSpanMul ?? 1;
       m.orbAdd += s.orbAdd ?? 0;
       m.pierceAdd += s.pierceAdd ?? 0;
       m.orbitSpeedMul *= s.orbitSpeedMul ?? 1;

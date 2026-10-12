@@ -110,6 +110,18 @@ export interface DamageOptions {
    * 否则给一只叠了感电的怪丢一发火球也会吃雷系加成。
    */
   element?: 'thunder';
+  /**
+   * 吹熄:本次命中把「血量低于该比例」的敌人**直接抹除**。
+   *
+   * 0 = 本形态不带吹熄。之所以挂在 DamageOptions 而不是各形态自己判断,
+   * 是因为「即死抗性」只有伤害入口知道该怎么看(见 Enemy.executeResist),
+   * 而它绝不能长成第二个绕过 enemy.takeDamage 的击杀入口。
+   *
+   * 阈值还会被抗性折算:`有效阈值 = executeBelow × (1 - 即死抗性)`,
+   * 精英抗性 0.5 → 20% 的阈值降成 10%,首领抗性 1 → 直接免疫。
+   * 「不产生额外伤害」:抹除走静默击杀入口,不弹第二个伤害数字。
+   */
+  executeBelow?: number;
 }
 
 /**
@@ -132,13 +144,19 @@ export type DamageApplier = (
  * 直射   projectile 从玩家射出,直线飞行(寂灭指的射程、火球术的落点爆裂都在这里)
  * 环绕   orbiter     持续绕玩家公转,接触即伤害(剑阵)
  * 扇形   cone        前方扇面分 N 段推进,每段结算并把敌人向外推挤(厚土术)
+ * 弧带   arc         一条**有厚度的弧带**自脚下向外旋卷,沿途把敌人往弧线内侧牵引(龙卷)
  * 连锁   chain       瞬时弹射,逐跳衰减并给目标叠感电(五雷正法)
  * 地效   zone        在指定地点持续灼烧(焚天·火海的落点火海)
  *
- * 五种几何两两不同:线 / 环 / 面 / 链 / 滞留。
+ * 六种几何两两不同:线 / 环 / 扇面 / 弧带 / 链 / 滞留。
  * 这是《build设计》第四节「五者在关闭特效、只看碰撞体时仍可一眼分辨」的代码落点。
+ *
+ * ⚠️ **弧带为什么不能复用扇形**:cone 是一整片**实心**扇面、逐段结算、
+ *    有命中上限、把敌人**向外推**;arc 是一圈**薄弧**、整片同时飞出去、
+ *    无命中上限(每目标结算 2 次封顶)、把敌人**向内拉**。两者方向相反、
+ *    结算模型不同,共用一个形态会让「牵引」被推挤的命中上限卡住。
  */
-export type AttackForm = 'projectile' | 'orbiter' | 'cone' | 'chain' | 'zone';
+export type AttackForm = 'projectile' | 'orbiter' | 'cone' | 'arc' | 'chain' | 'zone';
 
 /** 敌人随机变异体 */
 export interface EnemyMutation {
@@ -359,6 +377,14 @@ export interface SpellRelicMods {
   orbitSpeedMul: number;
   /** 推距倍率(厚土印) */
   pushMul: number;
+  /**
+   * 弧角倍率(仙帝传道画轴)
+   *
+   * 只对弧带形态有意义。画轴每级 +8%,满级 +40% —— 这是它把「一条弧」
+   * 变成「几乎半圈」的那一半收益,与 `damageMul` 同一件遗物给、但作用在
+   * 完全不同的维度上(一个改伤害,一个改覆盖面)。
+   */
+  arcSpanMul: number;
   /** 额外减速幅度(厚土印) */
   slowAdd: number;
   /** 感电层数上限加成(紫金雷葫) */
@@ -422,6 +448,7 @@ export function neutralSpellMods(): SpellRelicMods {
     pierceAdd: 0,
     orbitSpeedMul: 1,
     pushMul: 1,
+    arcSpanMul: 1,
     slowAdd: 0,
     shockCapAdd: 0,
     shockMsAdd: 0,

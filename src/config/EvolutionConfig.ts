@@ -48,6 +48,11 @@ export const EVOLUTIONS: EvolutionDef[] = [
     keyRelic: 'zijin_lei',
     reason: '感电上限翻倍,满层目标每 2 秒自动降一道天雷 —— 补上雷系单体不足的短板。',
   },
+  {
+    base: 'longjuan', evolved: 'hufeng', evolvedName: '仙术·呼风',
+    keyRelic: 'xiandi_huazhou',
+    reason: '一道弧分成八道黑龙铺满全周,正前方多一道主龙 —— 不挑方向的全场清扫。',
+  },
 ];
 
 export function findEvolution(baseId: string): EvolutionDef | undefined {

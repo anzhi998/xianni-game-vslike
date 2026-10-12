@@ -103,7 +103,7 @@ export class RealmSystem {
     this.hpMul *= r.hpMul;
     this.speedMul *= r.moveSpeedMul;
     this.player.damageMul *= r.damageMul;
-    // 法位随大境界成长 —— 突破到筑基/结丹/元婴/化神各开一格,
+    // 法位随大境界成长 —— 突破到筑基/结丹/元婴各开一格(化神起封顶 5),
     // 这是「越早突破越赚」这条压力线在数值上的唯一落点
     this.weaponSystem.setSlotCap(r.spellSlots);
     this.weaponSystem.resetCooldowns();

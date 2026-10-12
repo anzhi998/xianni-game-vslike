@@ -161,11 +161,15 @@ export class UIScene extends Phaser.Scene {
       game.events.on('breakthrough', (realm: string) => {
         this.updateHUD();
         this.refreshSpells();
-        // 突破最直接的一次收益是法位(筑基/结丹/元婴/化神各开一格)——
-        // 不写出来玩家只会觉得「数字变了」,不知道自己刚被允许多带一门法术
+        // 突破最直接的一次收益是法位(筑基/结丹/元婴各开一格)——
+        // 不写出来玩家只会觉得「数字变了」,不知道自己刚被允许多带一门法术。
+        // ⚠️ 化神之后法位不再增长(收槽到 5),所以这句话**只在一格真的空着时**才说:
+        //    否则化神会弹出「可参悟第 5 门法术」,而悟道池此时根本不会再出新法术卡
         const gs = this.scene.get('GameScene') as any;
         const cap = gs?.weaponSystem?.getSlotCap?.() ?? 0;
-        const sub = cap <= 2 ? '' : `法位 ${cap} · 可参悟第 ${cap} 门法术`;
+        const held = gs?.weaponSystem?.getSpellCount?.() ?? 0;
+        const free = cap - held;
+        const sub = free > 0 ? `法位 ${cap} · 可参悟第 ${cap} 门法术` : '';
         this.showBanner(`突破至 ${realm}期!`, '#ffcc44', 2400, sub);
       });
       game.events.on('boss-spawned', (id: string) => {

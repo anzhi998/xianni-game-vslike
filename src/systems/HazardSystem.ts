@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { FireVent } from '../entities/Hazards/FireVent';
+import { viewRadius } from '../config/GameConfig';
 import type { HazardDef } from '../config/MapConfig';
 import type { Player } from '../entities/Player';
 
@@ -21,9 +22,17 @@ export class HazardSystem {
 
   /** 每轮喷发的火柱数 */
   private static readonly VENTS_PER_BURST = 2;
-  /** 落点到玩家的距离区间(像素)。下限小于一屏半径,意味着「可能直接喷在脚下」 */
-  private static readonly MIN_DIST = 120;
-  private static readonly MAX_DIST = 460;
+  /**
+   * 落点到玩家的距离区间,以「一屏半对角线」为单位。
+   *
+   * ⚠️ 必须跟着镜头缩放:喷发位置是**给玩家看的谜题**(「躲不躲」),
+   *    它落在多远完全按「玩家能不能看清预警」定的。镜头拉近后一屏变小,
+   *    还按旧像素喷,预警圈就会开在屏幕外 —— 玩家挨打却从没见过那圈东西。
+   *    括号里是 zoom = 1 时的等价像素;下限刻意小于一屏半径,
+   *    意味着「可能直接喷在脚下」。
+   */
+  private static readonly MIN_DIST_RATIO = 0.165;   // 120px
+  private static readonly MAX_DIST_RATIO = 0.634;   // 460px
 
   private nextAtSec = 3;
 
@@ -71,7 +80,9 @@ export class HazardSystem {
       // 池耗尽就少喷一根:环境机制是压力,不是伤害承诺
       if (!vent) break;
       const a = Math.random() * Math.PI * 2;
-      const d = HazardSystem.MIN_DIST + Math.random() * (HazardSystem.MAX_DIST - HazardSystem.MIN_DIST);
+      const r = viewRadius();
+      const d = r * HazardSystem.MIN_DIST_RATIO
+        + Math.random() * (r * HazardSystem.MAX_DIST_RATIO - r * HazardSystem.MIN_DIST_RATIO);
       vent.setup(
         player.x + Math.cos(a) * d,
         player.y + Math.sin(a) * d,

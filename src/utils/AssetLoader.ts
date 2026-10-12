@@ -75,7 +75,9 @@ export const DEAD_KEYS: ReadonlySet<string> = new Set([
  * 写死反而比推导更容易看出「这一张还没做」。
  */
 export function expectedTextureKeys(): string[] {
-  const keys: string[] = ['fx_hit'];
+  // 地面持续特效。`fx_fire_sea` = 焚天·火海的火海(Zone),
+  // 画布边界必须等于灼烧半径,规则见 docs/美术素材规格.md 的「地面持续特效」
+  const keys: string[] = ['fx_hit', 'fx_fire_sea'];
   // 主角四视图。左边由 setFlipX 镜像,不单列 —— 三个键四个朝向。
   // `player` 是缺图兜底,排在最后
   keys.push('player_down', 'player_up', 'player_side', 'player');
@@ -89,9 +91,11 @@ export function expectedTextureKeys(): string[] {
   }
 
   keys.push(
-    // 法术投射物
+    // 法术投射物。⚠️ proj_sand / proj_bolt 在 DEAD_KEYS 里,列在这里只为留个位置
     'proj_fireball', 'proj_nine_nether_fire', 'proj_jimie', 'proj_huamo',
     'proj_zhanluo', 'proj_sand', 'proj_bolt', 'proj_sword_array', 'proj_enemy_shot',
+    // 弧带前缘的龙头。**不是死键**:Tornado.prepareHead 会读它(见 SpellConfig)
+    'proj_longjuan', 'proj_hufeng',
     // 掉落物
     'xp_gem_0', 'xp_gem_1', 'xp_gem_2', 'xp_gem_3',
     'pickup_chest_wood', 'pickup_chest_jade', 'pickup_chest_gold',

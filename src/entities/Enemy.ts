@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { ENEMIES, REALM_HP_SCALE } from '../config/EnemyConfig';
+import { SPRITE_ART_SCALE } from '../config/GameConfig';
 import { rollEliteDrops } from '../config/EliteConfig';
 import { showFirstFrame } from '../utils/EnemyFrames';
 import { NORMAL_MUTATION } from '../types';
@@ -25,6 +26,23 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   public resistKnockback = false;
   /** 护甲:0~0.5 的伤害减免。傀儡卫的「高减伤」靠它成立 */
   public armor = 0;
+  /**
+   * 即死抗性:0 = 无,1 = 完全免疫。
+   *
+   * 吹熄(仙术·呼风)的阈值按 `阈值 × (1 - 本值)` 折算 ——
+   * 精英默认 0.5 → 20% 的阈值降成 10%,首领 1 → 直接免疫。
+   * ⚠️ 它挂在 Enemy 上而不是每处调用点现判,是因为「这一发能不能直接抹掉它」
+   *    只在伤害入口知道该怎么看;各形态各判一次的话,加第二个即死来源时
+   *    一定会漏掉其中一个。
+   */
+  public executeResist = 0;
+  /**
+   * 精英的默认即死抗性(设计书 ⑦ ⑥)。
+   *
+   * 吹熄的阈值是「血量低于 20%」,精英抗性 50% → 有效阈值降到 10%,
+   * 所以「一记吹熄收掉一整片精英」这种局面不会发生。首领免疫(见 setup)。
+   */
+  static readonly ELITE_EXECUTE_RESIST = 0.5;
 
   // ---- 位移与状态(全部是 setup() 必须复位的字段)----
   /**
@@ -37,6 +55,17 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   public knockX = 0;
   public knockY = 0;
   public knockUntil = 0;
+  /**
+   * 牵引速度偏移(px/s),到期前一直叠加在追猎速度上(龙卷)。
+   *
+   * ⚠️ 它**不写进 knockX/knockY**,而是另开一组字段 —— 因为牵引与推挤
+   *    是设计书明写的**反制关系**:厚土术把怪推散、龙卷把怪聚拢,
+   *    同时携带时两者应当互相抵消。共用一组字段的话,后写的那一个会直接
+   *    覆盖前一个(而不是抵消),于是「一推一拉」会变成「谁后出手谁赢」。
+   */
+  public pullX = 0;
+  public pullY = 0;
+  public pullUntil = 0;
   /** 眩晕截止时刻(ms)。定住它的一切动作,是「撞墙 0.6 秒」那种硬控 */
   public stunnedUntil = 0;
   /** 减速强度与截止时刻。速度按 (1 - slowMul) 缩放 */
@@ -153,11 +182,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.xpValue = cfg.xpValue * m.xpMul;
     this.setOrigin(0.5, 0.7);
 
-    // 体型缩放。
+    // 体型缩放 = 变异倍率(精英 1.6)× 全局精灵放大(GameConfig.SPRITE_ART_SCALE)。
+    //
+    // ⚠️ **别去改 EnemyConfig.size 来放大怪** —— 它只对程序化贴图有效:
+    // `makeTexture` 开头有 `if (textures.exists(key)) return`,`src/assets/` 里有
+    // 真实素材时程序化那张根本不生成,于是 size 只改到碰撞圆、贴图纹丝不动,
+    // 结果是「看着没碰到却被撞飞」。运行期缩放对真实与程序化素材一视同仁。
     // Phaser 的 Arcade.Body.updateBounds() 从 sprite.frame.realWidth * scaleX
     // 推导源矩形,所以 setScale 单独用就能正确缩放碰撞盒 ——
     // 不要再同时把 cfg.size 乘进 setSize/setCircle,那会双重计算。
-    this.setScale(m.scaleMul);
+    this.setScale(m.scaleMul * SPRITE_ART_SCALE);
 
     // 死亡补间会改 alpha/scale,复用时必须复位,否则精英的体型/透明度会泄漏到普通怪。
     // 潜行怪常年半透明 —— 那是它「不受地形约束」的视觉提示,不是死亡残留
@@ -167,9 +201,16 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     // 注意:不要在这里调 body.setSize —— 它会把 isCircle 置回 false,
     // 把 setCircle 的结果整个覆盖掉(敌人原本就是这个 bug,实际是矩形碰撞体)。
-    // 体型交给 setScale:Body.updateBounds 从 frame.realWidth * scale 推导碰撞盒,
-    // 圆形碰撞体会自动跟着缩放。
-    const r = (cfg.size / 2) * m.scaleMul;
+    //
+    // ⚠️ `setCircle` 收的是**未缩放的源像素**,不是世界像素:
+    //    `setCircle(r)` 存下 `sourceWidth = r * 2`,而 `updateBounds()` 再算
+    //    `width = sourceWidth * scaleX`;`updateFromGameObject()` 里连 offset 也是
+    //    `transform.x + scaleX * (offset.x - displayOriginX)`。
+    //    所以半径**只写 `size / 2`**,体型一律交给 setScale 表达 ——
+    //    把 scaleMul / SPRITE_ART_SCALE 也乘进 r 就是平方:精英会拿到
+    //    1.6² = 2.56 倍的判定圈(而贴图只有 1.6 倍),表现是
+    //    「看着还有一段距离却被撞飞」。这个平方曾经真的存在于代码里。
+    const r = cfg.size / 2;
     body.setCircle(r, 0, 0);
     // setCircle 的偏移相对 body 顶点(= 精灵中心 - 贴图尺寸/2),
     // 所以偏移要补上半个贴图尺寸,碰撞圆才会落在精灵中心。
@@ -192,6 +233,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.resistFreeze = !!(cfg.resist?.freeze || m.resist?.freeze);
     this.resistKnockback = !!(cfg.resist?.knockback || m.resist?.knockback);
     this.armor = cfg.armor ?? 0;
+    // 即死抗性:首领免疫一切即死(它不该被一次清屏收掉),
+    // 精英按设计书的默认 50% 折算阈值,普通怪无抗性
+    this.executeResist = cfg.boss ? 1 : (m.elite ? Enemy.ELITE_EXECUTE_RESIST : 0);
 
     // 行为状态复位 —— 池化实体漏清任何一项都会带上一轮的残留。
     // 两个「下一次」都加了随机延迟:怪刚在屏外生成就开火/冲锋,
@@ -200,6 +244,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.knockX = 0;
     this.knockY = 0;
     this.knockUntil = 0;
+    this.pullX = 0;
+    this.pullY = 0;
+    this.pullUntil = 0;
     this.stunnedUntil = 0;
     this.slowMul = 0;
     this.slowUntil = 0;
@@ -267,7 +314,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     this.setScale(this.scaleX * 1.3);
     const body = this.body as Phaser.Physics.Arcade.Body;
-    const r = this.baseRadius * this.scaleX;
+    // 半径**不能**再乘 scaleX —— setCircle 收的是源像素,updateBounds 会自己
+    // 乘一遍当前缩放(见 setup 里的长篇注释)。写 `baseRadius * scaleX` 就是
+    // 平方,附身之后判定圈会比体型大 30%,而不是大 0%。
+    const r = this.baseRadius;
     body.setCircle(r, 0, 0);
     body.setOffset(this.frame.realWidth / 2 - r, this.frame.realHeight / 2 - r);
     body.updateBounds();
@@ -327,6 +377,27 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.knockX = (dirX / len) * speed;
     this.knockY = (dirY / len) * speed;
     this.knockUntil = Math.max(this.knockUntil, now + ms);
+    return true;
+  }
+
+  /**
+   * 施加一次牵引(龙卷)。
+   *
+   * 与击退的差别有两条,都不是风格问题:
+   *   - **免疫条件不同**:击退看 resistKnockback,牵引看 resistPull。
+   *     两者各自独立,一只「免疫击退」的怪照样能被搅成一团。
+   *   - **不共用字段**:写进 pullX/pullY 而不是 knockX/knockY,
+   *     这样同一帧里的推挤与牵引会**相加**,即设计书说的「互相抵消」。
+   *
+   * @param speed px/s 的偏移速度,不是位移量(同 applyKnock)
+   * @returns 是否真的被拉动(牵引免疫的目标返回 false)
+   */
+  applyPull(dirX: number, dirY: number, speed: number, ms: number, now: number): boolean {
+    if (this.resistPull) return false;
+    const len = Math.hypot(dirX, dirY) || 1;
+    this.pullX = (dirX / len) * speed;
+    this.pullY = (dirY / len) * speed;
+    this.pullUntil = Math.max(this.pullUntil, now + ms);
     return true;
   }
 

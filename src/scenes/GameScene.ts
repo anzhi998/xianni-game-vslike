@@ -8,6 +8,7 @@ import { Pickup } from '../entities/Pickup';
 import { Orbiter } from '../entities/attacks/Orbiter';
 import { Zone } from '../entities/attacks/Zone';
 import { SandWave } from '../entities/attacks/SandWave';
+import { Tornado } from '../entities/attacks/Tornado';
 import { ChainBolt } from '../entities/attacks/ChainBolt';
 import { Barrier } from '../entities/attacks/Barrier';
 import { FireVent } from '../entities/Hazards/FireVent';
@@ -25,7 +26,7 @@ import { EvolutionSystem } from '../systems/EvolutionSystem';
 import { ChestSystem } from '../systems/ChestSystem';
 import { HazardSystem } from '../systems/HazardSystem';
 import { BossSystem } from '../systems/BossSystem';
-import { GAME_WIDTH, GAME_HEIGHT } from '../config/GameConfig';
+import { GAME_WIDTH, GAME_HEIGHT, CAMERA_ZOOM } from '../config/GameConfig';
 import { getMap, DEFAULT_MAP_ID } from '../config/MapConfig';
 import type { MapDef } from '../config/MapConfig';
 import { SPELLS, BASE_SPELL_IDS, STARTING_SPELL, MAX_SPELL_SLOTS, resolveSpell,
@@ -67,6 +68,7 @@ export class GameScene extends Phaser.Scene {
   public orbiterPool!: Phaser.GameObjects.Group;
   public zonePool!: Phaser.GameObjects.Group;
   public sandWavePool!: Phaser.GameObjects.Group;
+  public tornadoPool!: Phaser.GameObjects.Group;
   public chainBoltPool!: Phaser.GameObjects.Group;
   public barrierPool!: Phaser.GameObjects.Group;
   public fireVentPool!: Phaser.GameObjects.Group;
@@ -222,6 +224,9 @@ export class GameScene extends Phaser.Scene {
     this.orbiterPool = this.add.group({ runChildUpdate: false, classType: Orbiter, maxSize: 24 });
     this.zonePool = this.add.group({ runChildUpdate: false, classType: Zone, maxSize: 20 });
     this.sandWavePool = this.add.group({ runChildUpdate: false, classType: SandWave, maxSize: 12 });
+    // 弧带:仙术·呼风一次放 9 道(8 黑龙 + 主龙),冷却 1.70s、存活 0.90s,
+    // 所以同一时刻最多 9 只在场。12 是给召唤怪/机制怪叠加留的余量。
+    this.tornadoPool = this.add.group({ runChildUpdate: false, classType: Tornado, maxSize: 12 });
     this.chainBoltPool = this.add.group({ runChildUpdate: false, classType: ChainBolt, maxSize: 10 });
     this.barrierPool = this.add.group({ runChildUpdate: false, classType: Barrier, maxSize: 3 });
     // 火柱:预警 1.2s + 喷发 1.6s = 2.8s 一根,8 秒喷 2 根 —— 6 个足够
@@ -279,6 +284,12 @@ export class GameScene extends Phaser.Scene {
       w.bind(this.enemyPool, this.enemyShotPool, apply);
       this.sandWavePool.add(w);
     }
+    for (let i = 0; i < 12; i++) {
+      const t = new Tornado(this);
+      t.setActive(false).setVisible(false);
+      t.bind(this.enemyPool, apply);
+      this.tornadoPool.add(t);
+    }
     for (let i = 0; i < 10; i++) {
       const b = new ChainBolt(this);
       b.setActive(false).setVisible(false);
@@ -314,6 +325,11 @@ export class GameScene extends Phaser.Scene {
       g.lineStyle(26, 0x000000, 0.11 * (1 - i / 8));
       g.strokeRect(inset, inset, GAME_WIDTH - inset * 2, GAME_HEIGHT - inset * 2);
     }
+    // ⚠️ **scrollFactor 0 只是「不跟着卷动」,不代表「不跟着缩放」** ——
+    //    相机 zoom 会把固定层一起放大,于是这张按 1280×720 画的暗角会被放大
+    //    1.35 倍,四边的黑边直接跑出屏幕,遮天看起来像「画面中间发暗」。
+    //    反向缩放回去,暗角才重新贴在屏幕边上。
+    g.setScale(1 / CAMERA_ZOOM);
     g.setAlpha(0);
     this.veilOverlay = g;
   }
@@ -322,6 +338,9 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
     this.cameras.main.setBounds(0, 0, this.map.worldWidth, this.map.worldHeight);
     this.cameras.main.setDeadzone(40, 40);
+    // 镜头拉近。世界坐标与所有数值不变,只是「一屏能看到多少」变小 ——
+    // 刷怪/索敌/精英牵引环都按 viewRadius() 换算过,所以它们跟着一起缩放
+    this.cameras.main.setZoom(CAMERA_ZOOM);
   }
 
   private setupInput(): void {
@@ -336,6 +355,7 @@ export class GameScene extends Phaser.Scene {
       orbiters: this.orbiterPool,
       zones: this.zonePool,
       sandWaves: this.sandWavePool,
+      tornadoPool: this.tornadoPool,
       chainBolts: this.chainBoltPool,
       barriers: this.barrierPool,
     });
@@ -582,6 +602,14 @@ export class GameScene extends Phaser.Scene {
     // 蓝字消失本身就是「我穿透了」的反馈
     this.spawnDamageText(textX, textY, Math.round(dmg), { crit, armored: afterArmor < amount });
     if (killed) this.onEnemyKilled(enemy);
+    // 吹熄:这一发带 executeBelow 且把目标压到阈值以下时直接抹除。
+    //   走静默击杀入口(与自爆同一条)—— 不再弹一个伤害数字,
+    //   掉落与击杀计数照常,因为设计书只说它「不产生额外伤害」,没说它不算击杀。
+    //   先判 killed 是为了避免刚被这一发打死的目标再走一次亡语与掉落
+    else if (opts?.executeBelow && opts.executeBelow > 0 && enemy.active && !enemy.isDead) {
+      const threshold = opts.executeBelow * (1 - enemy.executeResist);
+      if (enemy.health / enemy.maxHealth < threshold) this.killEnemy(enemy);
+    }
     return true;
   }
 
@@ -914,7 +942,7 @@ export class GameScene extends Phaser.Scene {
    * 抽的是**类别**(新法术 / 法术升级 / 新遗物 / 遗物叠层 / 消耗品),
    * 按设计书 3.3 的权重抽一个还有货的类别,再从那一类里随机取具体条目。
    * 抽类别而不是抽条目,是为了让「还没学新法术的玩家」总能拿到法术卡 ——
-   * 逐条抽的话,五门法术里已学会四门时,新法术只剩 1/4 概率露面。
+   * 逐条抽的话,六门法术里已学会五门时,新法术只剩 1/6 概率露面。
    *
    * 保底:还有空槽时,三张卡里至少一张是「未拥有项」。
    */
@@ -1203,13 +1231,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * 把五门**基础**法术一次装满(进化形态走「凑齐融合」,不在这里发)。
+   * 调试用:把法位抬到「装得下全部基础法术」。
+   *
+   * ⚠️ **不能写 `setSlotCap(MAX_SPELL_SLOTS)`**。收槽到 5 之后,6 门法术在
+   *    5 格里必然有一门发不出去,而按 `BASE_SPELL_IDS` 的顺序,发不出去的
+   *    恰好是**最后一门**(龙卷)。后果是「装满神通」只给 5 门却不报错,
+   *    「凑齐融合」里 longjuan → hufeng 那条链**永远凑不齐** ——
+   *    而调试面板点不通的内容,和坏掉的内容在表现上一模一样。
+   *    所以上限按**法术门数**取,加第 7 门法术时这里自动跟上。
+   */
+  private debugUncapSlots(): void {
+    this.weaponSystem.setSlotCap(Math.max(MAX_SPELL_SLOTS, BASE_SPELL_IDS.length));
+  }
+
+  /**
+   * 把六门**基础**法术一次装满(进化形态走「凑齐融合」,不在这里发)。
    *
    * 同样先把法位开到上限:「装满」这个名字承诺的就是装满,
    * 而开局只有 2 格 —— 不抬上限的话这个按钮会静默地只给两门。
    */
   public debugGrantAllSpells(): string {
-    this.weaponSystem.setSlotCap(MAX_SPELL_SLOTS);
+    this.debugUncapSlots();
     const names: string[] = [];
     for (const id of BASE_SPELL_IDS) {
       if (this.weaponSystem.hasSpell(id)) continue;
@@ -1218,7 +1260,7 @@ export class GameScene extends Phaser.Scene {
     this.refreshHudAfterDebug();
     return names.length
       ? `参悟 ${names.join(' · ')}(法位已开到 ${this.weaponSystem.getSlotCap()})`
-      : '五门基础法术都已持有';
+      : '六门基础法术都已持有';
   }
 
   /** 把手上每一门神通都拉到满级 —— 一键验证「8 级手感」 */
@@ -1245,10 +1287,10 @@ export class GameScene extends Phaser.Scene {
    * 条件从 EVOLUTIONS 表读,不手写 id 数组 —— 否则加一条链就会忘了改这里。
    */
   public debugFullEvolution(): string {
-    // 法位阶梯(凝气只有 2 格)会把「五门一起凑」卡住 —— 这个按钮的用途是
-    // **一次看完全部五条进化链**,所以先把法位开到上限再补法术。
+    // 法位阶梯(凝气只有 2 格)会把「六门一起凑」卡住 —— 这个按钮的用途是
+    // **一次看完全部六条进化链**,所以先把法位开到上限再补法术。
     // 想验「法位不够时卡池怎么变」请用「开一格法位」,不要靠这里。
-    this.weaponSystem.setSlotCap(MAX_SPELL_SLOTS);
+    this.debugUncapSlots();
     for (const def of EVOLUTIONS) {
       if (!this.weaponSystem.hasSpell(def.base)) this.weaponSystem.addSpell(def.base);
       let guard = 0;
