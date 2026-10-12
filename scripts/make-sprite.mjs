@@ -13,9 +13,12 @@
  *   node scripts/make-sprite.mjs <id> [<id> ...]
  *   node scripts/make-sprite.mjs --from <file> --id <id> [--no-elite] [--out-size N]
  *
- * 前者从 `src/assets/_raw/<id>.png` 读图,后者从任意路径读图。
+ * 前者从 `assets-src/raw/<id>.png` 读图,后者从任意路径读图。
  * 默认会**同时**产出 `enemy_<id>.png` 与 `elite_<id>.png`,符合设计文档"成对"约定。
  * `--no-elite` 只出普通版;精英版要重做,再跑一次加 `--only elite`。
+ * `--out <file>` 单张直出(配合 `--out-size`,给 `proj_boss_sword` 这类不带前缀的非角色图用)。
+ * `--aspect free` 按 bbox 自由裁切(不切方),高度 = out-size × 原始长宽比 ——
+ *   给剑气这类**有方向、长宽比≠1**的弹体用;默认 `square`。
  *
  * ## 为什么是 PNG 输入
  *
@@ -36,20 +39,22 @@ import { deflateSync, inflateSync } from 'node:zlib';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
-const RAW_DIR = resolve(ROOT, 'src/assets/_raw');
+const RAW_DIR = resolve(ROOT, 'assets-src/raw');
 const ASSET_DIR = resolve(ROOT, 'src/assets');
 
 // ─── CLI 解析 ─────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
-const opts = { from: null, id: null, noElite: false, only: null, outSize: null, help: false };
+const opts = { from: null, id: null, noElite: false, only: null, outSize: null, out: null, aspect: 'square', help: false };
 const ids = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === '--from') opts.from = argv[++i];
   else if (a === '--id') opts.id = argv[++i];
+  else if (a === '--out') opts.out = argv[++i];          // 直接指定输出文件(单张,用于弹体等非角色图)
   else if (a === '--no-elite') opts.noElite = true;
   else if (a === '--only') opts.only = argv[++i];        // 'normal' | 'elite'
   else if (a === '--out-size') opts.outSize = parseInt(argv[++i], 10);
+  else if (a === '--aspect') opts.aspect = argv[++i];    // 'square' | 'free'
   else if (a === '-h' || a === '--help') opts.help = true;
   else if (a.startsWith('--')) { console.error(`未知选项: ${a}`); process.exit(2); }
   else ids.push(a);
@@ -58,10 +63,14 @@ if (opts.id) ids.push(opts.id);
 if (opts.only && !['normal', 'elite'].includes(opts.only)) {
   console.error(`--only 仅接受 normal|elite,收到: ${opts.only}`); process.exit(2);
 }
+if (!['square', 'free'].includes(opts.aspect)) {
+  console.error(`--aspect 仅接受 square|free,收到: ${opts.aspect}`); process.exit(2);
+}
 if (opts.help || ids.length === 0) {
   console.log(`用法:
   node scripts/make-sprite.mjs <id> [<id> ...]
   node scripts/make-sprite.mjs --from <file> --id <id> [--no-elite] [--only normal|elite] [--out-size N]
+  node scripts/make-sprite.mjs --from <file> --id <id> --out <file> --out-size N --aspect free
 `);
   process.exit(0);
 }
@@ -70,8 +79,9 @@ if (opts.help || ids.length === 0) {
 // 与 docs/美术素材规格.md §3.1 + src/config/EnemyConfig.ts 一一对应。
 // 缺表项时**显式失败** —— 写错键的后果是游戏里一只空方块,必须让脚本哭着罢工。
 const SIZE_TABLE = {
-  zhuque: 87, tianyunzi: 84, situnan: 80, beast: 16, jinglingzhu: 16, shilingchong: 18,
+  zhuque: 87, tianyunzi: 84, lingtianhou: 80, beast: 16, jinglingzhu: 16, shilingchong: 18,
   pugongying: 20, mihu: 22, heiguai: 24, shaoye: 24, tunshi: 28,
+  sword_disciple: 26,
   yuling: 30, changwei: 32, wuqing: 34, zhangli: 36, sidian: 38,
   danyang: 40, daxiu: 42, shenyou: 44, fenghou: 46, jiuying: 48,
   shentian: 50, minghuang: 52, dadi: 54, diying: 56, changsheng: 58,
@@ -326,6 +336,26 @@ function squareCrop(img, bbox) {
   return { width: side, height: side, channels: 4, data: out };
 }
 
+// ─── 3.5 自由比例裁切(给弹体这类「有方向、长宽比≠1」的图用) ─────────────
+// 方形裁切会把一条横向的剑气切成正方形,灌满上下两侧的透明区,
+// 结果是缩放后剑气只有中间一条细线。--aspect free 走这条:
+// 只按 bbox 裁、留 4% 边,长宽比保持原样;缩放由调用方按宽度算高度。
+function cropToBbox(img, bbox) {
+  const { minX, minY, maxX, maxY } = bbox;
+  const bw = maxX - minX + 1, bh = maxY - minY + 1;
+  const pad = 0.04;
+  const px = Math.round(bw * pad), py = Math.round(bh * pad);
+  const sx = Math.max(0, minX - px);
+  const sy = Math.max(0, minY - py);
+  const w = Math.min(img.width - sx, bw + px * 2);
+  const h = Math.min(img.height - sy, bh + py * 2);
+  const out = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    img.data.copy(out, y * w * 4, (sy + y) * img.width * 4 + sx * 4, (sy + y) * img.width * 4 + (sx + w) * 4);
+  }
+  return { width: w, height: h, channels: 4, data: out };
+}
+
 // ─── 4. 4×4 Catmull-Rom 缩放 ─────────────────────────────────────────────
 // 比双线性锐一档,比双三次便宜。挑这个是因为做这种尺寸用不到 Lanczos-3 的精度,
 // 却又比双线性少模糊。
@@ -462,9 +492,22 @@ function processOne(inputPath, id, outSize) {
   const keyed = keyOutAlpha(raw, bg);
   const { minX, minY, maxX, maxY } = keyed.bbox;
   console.log(`  抠图: bbox=(${minX},${minY})-(${maxX},${maxY})`);
-  const cropped = squareCrop(keyed, keyed.bbox);
-  const sized = resizeBicubic(cropped, outSize, outSize);
-  console.log(`  缩放: ${cropped.width}x${cropped.height} -> ${outSize}x${outSize}`);
+  const cropped = opts.aspect === 'free' ? cropToBbox(keyed, keyed.bbox) : squareCrop(keyed, keyed.bbox);
+  // free 模式按宽度定高(保持原始长宽比);square 模式恒为 N×N。
+  const outW = outSize;
+  const outH = opts.aspect === 'free' ? Math.max(1, Math.round(outSize * (cropped.height / cropped.width))) : outSize;
+  const sized = resizeBicubic(cropped, outW, outH);
+  console.log(`  缩放: ${cropped.width}x${cropped.height} -> ${outW}x${outH}${opts.aspect === 'free' ? ' (自由比例)' : ''}`);
+
+  // --out:直接指定输出文件(单张,不含 enemy_/elite_ 前缀)。
+  // 给**非角色**的图用 —— 弹体(pro proj_boss_sword 这类)的名字不带前缀,
+  // 也永远不会有精英版;硬走 enemy_<id> 命名会产出一张没人引用的图。
+  if (opts.out) {
+    const out = resolve(ROOT, opts.out);
+    writeFileSync(out, encodePng(sized.width, sized.height, sized.data));
+    console.log(`  ✓ ${out} (--out 单张输出,跳过精英版)`);
+    return;
+  }
 
   // 写普通版
   if (!opts.only || opts.only === 'normal') {
@@ -486,7 +529,7 @@ for (const id of ids) {
   const outSize = opts.outSize ?? lookupSize(id);
   const inputPath = opts.from ?? resolve(RAW_DIR, `${id}.png`);
   if (!existsSync(inputPath)) {
-    console.error(`[${id}] 找不到源图: ${inputPath}\n  放在 src/assets/_raw/${id}.png,或用 --from 指定路径。`);
+    console.error(`[${id}] 找不到源图: ${inputPath}\n  放在 assets-src/raw/${id}.png,或用 --from 指定路径。`);
     process.exit(2);
   }
   if (extname(inputPath).toLowerCase() !== '.png') {

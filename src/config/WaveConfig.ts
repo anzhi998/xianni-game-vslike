@@ -268,8 +268,9 @@ export function validateOpeningDifficulty(): string[] {
  *
  * 加了一只怪却忘了排登场 / 放进机制投放表 / 挂到别人的 splitInto,它就是一坨
  * 永远不出场的死数据 —— 类型检查看不见,试玩也碰不到,只有翻配置时才发现。
- * 生成路径有四条,任意一条命中即可:
- *   登场表 · 机制怪投放表(带 mechanism)· 别人的 splitInto · 伪宝匣变身目标 · 首领时间表
+ * 生成路径有五条,任意一条命中即可:
+ *   登场表 · 机制怪投放表(带 mechanism)· 别人的 splitInto · 伪宝匣变身目标 ·
+ *   首领时间表 · **首领召唤表(approach: 'summon')**
  *
  * 与调试面板的关系:面板的「刷全部怪 / 下一个机制怪」都是遍历这张表得来的,
  * 所以只要这一步能过,新怪就一定点得到 —— 见 CLAUDE.md 的调试面板约定
@@ -285,6 +286,13 @@ export function validateEnemyReachability(): string[] {
   reachable.add(MIMIC_ENEMY_ID);
   // 首领走 BossSystem 的时间表,不进登场表
   for (const id of Object.keys(BOSSES)) reachable.add(id);
+  // 首领的召唤物(剑肖十二子等)只在 Boss 战里出现 —— 它们的设计前提就是
+  // 「不参与常规波次」,所以必须在这里被认账,否则可达性自检会误报
+  for (const boss of Object.values(BOSSES)) {
+    for (const phase of boss.phases) {
+      if (phase.summon) reachable.add(phase.summon.type);
+    }
+  }
 
   return Object.keys(ENEMIES).filter((id) => !reachable.has(id));
 }

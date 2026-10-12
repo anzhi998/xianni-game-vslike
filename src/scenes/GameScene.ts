@@ -14,6 +14,7 @@ import { ChainBolt } from '../entities/attacks/ChainBolt';
 import { Barrier } from '../entities/attacks/Barrier';
 import { FireVent } from '../entities/Hazards/FireVent';
 import { FingerOfFate } from '../entities/Hazards/FingerOfFate';
+import { MeteorFall } from '../entities/Hazards/MeteorFall';
 import { DamageText } from '../entities/DamageText';
 import type { DamageTextOpts } from '../entities/DamageText';
 import { InputManager } from '../utils/InputManager';
@@ -29,12 +30,12 @@ import { ChestSystem } from '../systems/ChestSystem';
 import { HazardSystem } from '../systems/HazardSystem';
 import { BossSystem } from '../systems/BossSystem';
 import { GAME_WIDTH, GAME_HEIGHT, CAMERA_ZOOM } from '../config/GameConfig';
-import { getMap, DEFAULT_MAP_ID } from '../config/MapConfig';
+import { getMap, DEFAULT_MAP_ID, HAZARD_FALLBACK_COLOR } from '../config/MapConfig';
 import type { MapDef } from '../config/MapConfig';
 import { SPELLS, BASE_SPELL_IDS, STARTING_SPELL, MAX_SPELL_SLOTS, resolveSpell,
   validateSpellReachability, validateEvolutionLinks, validateSpellKeys } from '../config/SpellConfig';
 import { RELICS, RELIC_IDS, RELIC_SLOTS, validateRelicReachability } from '../config/RelicConfig';
-import { BOSSES } from '../config/BossConfig';
+import { BOSSES, METEOR_COLOR, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
 import { validateBossSchedule } from '../config/BossConfig';
 import { EVOLUTIONS } from '../config/EvolutionConfig';
 import { HEAL_PILL_FRACTION, XP_PILL_FRACTION } from '../config/EliteConfig';
@@ -75,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   public barrierPool!: Phaser.GameObjects.Group;
   public fireVentPool!: Phaser.GameObjects.Group;
   public fingerPool!: Phaser.GameObjects.Group;
+  public meteorPool!: Phaser.GameObjects.Group;
 
   // 系统
   public inputManager!: InputManager;
@@ -249,6 +251,9 @@ export class GameScene extends Phaser.Scene {
     // 命数指:单根寿命约 2.3s(1.6 预警 + 0.26 指落 + 0.42 收尾),
     // 天运子终阶最快 8.2s 一次、一次 3 根,同屏最多约 3 根 —— 6 是余量
     this.fingerPool = this.add.group({ runChildUpdate: false, classType: FingerOfFate, maxSize: 6 });
+    // 朱雀陨石:单颗寿命 1.0s 坠落 + 0.45s 残烬 ≈ 1.45s,终阶 2.0s 一次、一次 4 颗。
+    // 理论峰值 4 颗同时在场,但两波之间会叠(前一波残烬未尽、后一波已入场)—— 8 是余量
+    this.meteorPool = this.add.group({ runChildUpdate: false, classType: MeteorFall, maxSize: 8 });
 
     for (let i = 0; i < 200; i++) {
       const e = new Enemy(this, 0, 0);
@@ -352,6 +357,16 @@ export class GameScene extends Phaser.Scene {
       );
       this.fingerPool.add(f);
     }
+    for (let i = 0; i < 8; i++) {
+      const m = new MeteorFall(this);
+      m.setActive(false).setVisible(false);
+      m.bind(
+        () => this.player,
+        (amount, sx, sy) => this.damagePlayer(amount, sx, sy),
+        (x, y, radius) => this.onMeteorImpact(x, y, radius),
+      );
+      this.meteorPool.add(m);
+    }
   }
 
   private setupPlayer(): void {
@@ -453,9 +468,12 @@ export class GameScene extends Phaser.Scene {
       spawnBoss: (id) => this.spawnBoss(id),
       spawnShot: (x, y, a, dmg, spd, style) => this.spawnEnemyShot(x, y, a, dmg, spd, true, style),
       spawnVent: (x, y, r, warn, erupt, dmg) => this.spawnFireVent(x, y, r, warn, erupt, dmg),
+      spawnMeteor: (x, y, r, warn, dmg, color) => this.spawnMeteor(x, y, r, warn, dmg, color),
       spawnFinger: (x, y, r, warn, dmg, color) => this.spawnFinger(x, y, r, warn, dmg, color),
       buffEnemies: (n, hpMul, spdMul, dmgMul) => this.applyFateBuffToWave(n, hpMul, spdMul, dmgMul),
       novaBurst: (x, y, radius, color) => this.spawnSlamRing(x, y, radius, color),
+      domainTick: (x, y, radius, damage) => this.onSwordDomainTick(x, y, radius, damage),
+      summon: (type, count, maxAlive) => this.summonSwordDisciples(type, count, maxAlive),
       getPlayer: () => this.player,
       // 命数指的提前量要读玩家「正在往哪跑」。Player 是 Arcade Sprite,
       // body.velocity 由 InputManager 每帧写 —— 直接取它,不额外记一份状态
@@ -1205,11 +1223,43 @@ export class GameScene extends Phaser.Scene {
     return e;
   }
 
-  /** 火柱。环境机制与首领的火雨共用它 —— 两者要的可视语言完全相同 */
+  /**
+   * 灵脉地热的地火柱。**只有地图机制走这里** —— 首领的火雨已经改走 spawnMeteor。
+   *
+   * ⚠️ 颜色是 `MAP_HAZARD_COLOR` 而不是硬编码:三种「火」的色相是玩家判断
+   *    「这团火归谁」的唯一线索,而它们必须三者互不相同(见 MapConfig)。
+   *    地火从 0xff5522 让位到橙黄 0xff8833,把橙红让给了玩家火海以外的对比空间。
+   */
   private spawnFireVent(x: number, y: number, radius: number, warnMs: number, eruptMs: number, damage: number): void {
     const v = this.fireVentPool.get() as FireVent;
     if (!v) return;
-    v.setup(x, y, radius, warnMs, eruptMs, 500, damage, 0xff5522);
+    v.setup(x, y, radius, warnMs, eruptMs, 500, damage, this.map.hazard?.color ?? HAZARD_FALLBACK_COLOR);
+  }
+
+  /**
+   * 朱雀·火雨 —— 一颗从右上斜坠的紫红陨石。
+   *
+   * 与 `spawnFireVent` 的三条区分线写在 MeteorFall 的头注释里(形态 / 结算 / 色相)。
+   * 这里只补一句:**池耗尽就少落一颗**,与火柱/命数指同一口径 ——
+   * 压力从来不是伤害承诺,漏一颗只是玩家少躲一次。
+   */
+  private spawnMeteor(x: number, y: number, radius: number, warnMs: number, damage: number, color: number): void {
+    const m = this.meteorPool.get() as MeteorFall;
+    if (!m) return;
+    m.setup(x, y, radius, warnMs, damage, color);
+  }
+
+  /**
+   * 陨石触地的一刻。震屏 + 紫红冲击环 + 碎屑。
+   *
+   * 与 `onFingerSlam` 的差别在克制:命数指是「天命的审判」,震得重、环大;
+   * 陨石是一记**快而密**的打击(终阶 2 秒一波、一波 4 颗),每颗都震成那样
+   * 会让画面一直抖。所以只留一个短促的轻震,重量交给余烬和冲击环去说。
+   */
+  private onMeteorImpact(x: number, y: number, radius: number): void {
+    this.cameras.main.shake(90, 0.0035);
+    this.spawnSlamRing(x, y, radius * 0.85, 0xcc33cc);
+    this.spawnFateAshesFx(x, y, radius * 0.8);
   }
 
   /** 天运·命数指。池耗尽就少落一根 —— 与火柱同一口径:压力不是伤害承诺 */
@@ -1531,15 +1581,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * 首领脚下的「场所」图层。每帧由 update 调到当前首领位置。
+   * 剑域 —— 凌天侯脚下那块「万物皆可斩」的地,贴着首领每帧移动。
    *
-   * 它**不轮转** —— 场所是背景性的,转起来会抢走弹幕的注意力。
-   * 只做极慢的呼吸(alpha),提示「这里还是阵里」。
+   * 与原先的「首领场所」共用同一个图层,但**语义升级了**:
+   * 以前它只是一个装饰性的地砖(所有 Boss 都有,纯粹为了场面);
+   * 现在它是**有判定的危险区** —— 贴图半径必须等于 `domain.radius`,
+   * 玩家看到的那条边就是掉血的边。这是硬约束:视觉与实际判定不一致的
+   * 危险区会让玩家彻底不信任何地面标记,连带毁掉火雨那套预警圈。
+   *
+   * 只有带 `domain` 招式的阶段才显示(目前是凌天侯)。其余 Boss 依旧没有 ——
+   * 一个没有判定的地砖装饰,不值得在屏幕最拥挤的一层占位置。
    */
   private updateBossDomain(time: number): void {
-    const boss = this.bossSystem.current;
-    const alive = !!boss && boss.active && !boss.isDead;
-    if (!alive) {
+    const state = this.bossSystem.domainState();
+    if (!state.on) {
       if (this.bossDomain) this.bossDomain.setVisible(false);
       return;
     }
@@ -1549,11 +1604,116 @@ export class GameScene extends Phaser.Scene {
       this.bossDomain.setBlendMode(Phaser.BlendModes.ADD);
     }
     this.bossDomain.setVisible(true);
-    this.bossDomain.setPosition(boss.x, boss.y);
-    // 呼吸:0.14 ↔ 0.22,周期约 1.6s。够慢,不会读成闪烁
-    this.bossDomain.setAlpha(0.18 + Math.sin(time / 260) * 0.04);
-    // 色系跟着首领走:司徒南青白、天运子青金、朱雀橙金
-    this.bossDomain.setTint(this.bossFxColor(boss.bossKey));
+    this.bossDomain.setPosition(state.x, state.y);
+    // ⚠️ 贴图是按「半径 80」画的(160×160 的内容圈在 76 左右),
+    //    这里按实际 radius 反算缩放 —— 改贴图就必须同步改这个分母,
+    //    否则玩家看到的圈与实际判定会错开,那比没有圈更糟。
+    this.bossDomain.setScale(state.radius / SWORD_DOMAIN_TEXTURE_RADIUS);
+    // 呼吸:0.20 ↔ 0.28,周期约 1.6s。够慢,不会读成闪烁。
+    // 比原先的装饰地砖亮一档 —— 它现在是会掉血的东西,必须比背景更醒目
+    this.bossDomain.setAlpha(0.24 + Math.sin(time / 260) * 0.04);
+    // 色系跟着首领走:凌天侯青灰、天运子青金、朱雀橙金
+    this.bossDomain.setTint(this.bossFxColor(this.bossSystem.current?.bossKey ?? ''));
+  }
+
+  /**
+   * 剑域的一次伤害 tick。
+   *
+   * ⚠️ **绕开 `damagePlayer` 的 600ms 无敌帧,但保留无敌帧本身。**
+   *
+   *    `Player.takeDamage` 每次受伤给 600ms 无敌 —— 那是为**弹幕**设计的:
+   *    密集弹幕下不设无敌帧,玩家会在几帧内被同一波弹片打死。
+   *    但剑域的 tick 是 480–500ms,与 600ms 无敌帧几乎同频:
+   *    直接调 damagePlayer 会有**一半以上的 tick 被吞掉**,
+   *    「每秒 dps」就变成了一个随机数,配表上的 22/30 全是假的。
+   *
+   *    所以这里自己判断:如果上一次掉血刚发生过(玩家还在无敌里),
+   *    就**跳过这一 tick 并把 tick 计时器拨回**,让 tick 跟着无敌帧重新对齐。
+   *    结果是一个诚实的、可预期的每秒伤害,而不是一个被吞掉一半的数值。
+   *
+   *    这不会让剑域变成秒杀:玩家随时可以走出去,而走出去就该立刻安全。
+   */
+  private onSwordDomainTick(_x: number, _y: number, _radius: number, damage: number): void {
+    const player = this.player;
+    if (player.isDead()) return;
+    // 无敌中 = 刚刚才被烧过一次,这一 tick 不叠 —— 每秒伤害由此变得可预期
+    if (this.time.now < player.invincibleUntil) return;
+    this.damagePlayer(damage, player.x, player.y);
+  }
+
+  /**
+   * 剑肖弟子入场:一道剑光从天钉下 + 地面一圈剑痕扩散。
+   *
+   * 与命数指的光柱同构,但**短促得多**(260ms 而不是 1500ms):命数指是
+   * 「看着它落下来」的重击预告,弟子入场只是「他们来了」的一闪 ——
+   * 如果每只弟子都配一段长预告,场上三只同时入场就会变成三次小型演出,
+   * 把剑域那条真正需要被看见的边界线淹掉。
+   */
+  private spawnDiscipleArrivalFx(x: number, y: number): void {
+    const color = this.bossFxColor(this.bossSystem.current?.bossKey ?? '');
+    const bolt = this.add.image(x, y, 'fx_fatepillar');
+    bolt.setDepth(45);
+    bolt.setOrigin(0.5, 1);
+    bolt.setTint(color);
+    bolt.setAlpha(0);
+    bolt.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: bolt, alpha: 0.85, duration: 90,
+      onComplete: () => {
+        this.tweens.add({
+          targets: bolt, alpha: 0, duration: 190,
+          onComplete: () => bolt.destroy(),
+        });
+      },
+    });
+
+    const ring = this.add.image(x, y, 'fx_ring_slam');
+    ring.setDepth(44);
+    ring.setTint(color);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    ring.setAlpha(0.8);
+    ring.setScale(0.25);
+    this.tweens.add({
+      targets: ring, alpha: 0, scale: 0.95, duration: 320,
+      ease: Phaser.Math.Easing.Cubic.Out,
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /**
+   * 点名剑肖十二子。
+   *
+   * 落点规则:围绕剑尊**环形均分**撒开,而不是随机 ——
+   * 随机撒会在同一侧堆成一坨,玩家只要绕到另一侧就没有压力;
+   * 环形均分则无论玩家往哪跑,都会有人挡在路上。这正是这一招的用意:
+   * 打断「退到域外慢慢磨」的算盘。
+   */
+  private summonSwordDisciples(type: string, count: number, maxAlive: number): number {
+    const boss = this.bossSystem.current;
+    if (!boss || !boss.active || boss.isDead) return 0;
+
+    let alive = 0;
+    for (const e of this.enemyPool.getChildren() as Enemy[]) {
+      if (e.active && !e.isDead && e.enemyKey === type) alive++;
+    }
+    const room = Math.max(0, maxAlive - alive);
+    const n = Math.min(count, room);
+    if (n === 0) return 0;
+
+    // 从一个随机起始角开始,避免每次都在同样的四个方位出现
+    const base = Math.random() * Math.PI * 2;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i / n) * Math.PI * 2;
+      const d = 220 + Math.random() * 90;
+      const x = boss.x + Math.cos(a) * d;
+      const y = boss.y + Math.sin(a) * d;
+      this.spawnSystem.spawnChild(type, x, y);
+      // 弟子入场的那一帧:一道竖向的剑光从天上钉下来。
+      // 没有它,弟子就是「突然出现在那里」的一只怪 —— 而这一招的名字是
+      // 「剑肖十二子」,重点在那个「剑」字:他们是被师尊的剑气送来的
+      this.spawnDiscipleArrivalFx(x, y);
+    }
+    return n;
   }
 
   /**
@@ -1581,7 +1741,9 @@ export class GameScene extends Phaser.Scene {
   private bossFxColor(bossKey: string): number {
     switch (bossKey) {
       case 'zhuque': return 0xff8822;
-      case 'situnan': return 0x88ddff;
+      // 凌天侯:青灰的净荡剑气。比原先司徒南的青白(0x88ddff)更冷更灰一档 ——
+      // 他要与天运子的青金(0x44ccbb)、朱雀的橙金同时在场时各自可辨
+      case 'lingtianhou': return 0x9db4d0;
       case 'tianyunzi': return 0x44ccbb;
       default: return 0xcccccc;
     }
@@ -1809,16 +1971,16 @@ export class GameScene extends Phaser.Scene {
     const cx = this.player.x;
     const cy = this.player.y;
     // 出手阵:两个 Boss 的色系各放一次,确认旋转看得见
-    this.spawnBossCastFx(cx - 170, cy - 90, 0x88ddff);
+    this.spawnBossCastFx(cx - 170, cy - 90, 0x9db4d0);
     this.spawnBossCastFx(cx + 170, cy - 90, 0x44ccbb);
-    // 落点环:青白(司徒南)与金(天运子)
-    this.spawnSlamRing(cx - 170, cy + 20, 110, 0x88ddff);
+    // 落点环:青灰(凌天侯)与金(天运子)
+    this.spawnSlamRing(cx - 170, cy + 20, 110, 0x9db4d0);
     this.spawnSlamRing(cx + 170, cy + 20, 110, 0xd8b860);
     // 斩痕:四个方向
     for (let i = 0; i < 4; i++) {
       this.spawnSwordSlashFx(cx + Math.cos((i / 4) * Math.PI * 2) * 90,
         cy + Math.sin((i / 4) * Math.PI * 2) * 90,
-        (i / 4) * 360, 0x88ddff);
+        (i / 4) * 360, 0x9db4d0);
     }
     // 命数指的预言(符框 + 光柱)与实际落下
     this.spawnFinger(cx, cy, 100, 1600, 32, 0xd8b860);
@@ -1829,6 +1991,54 @@ export class GameScene extends Phaser.Scene {
     // 登场特效(三重符文 + 大环)
     this.spawnBossEntranceFx(cx, cy - 140, 0xff8822);
     return '首领特效全放一遍';
+  }
+
+  /**
+   * 三种「火」并排铺开,一眼校验色相是否真的分得开。
+   *
+   * 这是本次改动**唯一**的验收方式 —— 「玩家火海 / 地图地火 / 朱雀火雨」
+   * 三者的差别全在色相与形态上,而这两样都必须**同屏对比**才看得出来:
+   * 单看陨石觉得紫红很清楚,把地火摆在旁边才发现它们原本是同一个橙。
+   */
+  public debugThreeFires(): string {
+    const cx = this.player.x;
+    const cy = this.player.y;
+    // 左:地图地火(橙黄,地面柱状持续喷发)
+    this.spawnFireVent(cx - 230, cy, 90, 400, 4000, 14);
+    // 中:朱雀火雨(紫红,天上斜坠陨石,单次爆发)
+    this.spawnMeteor(cx, cy, 92, 1200, 24, METEOR_COLOR);
+    // 右:玩家火海(深血红,地面燃烧区)。火海是 Zone,只能由术法放 ——
+    //      这里用精灵色块示意它在地面上「摊开」的形态
+    const sea = this.add.image(cx + 230, cy, 'fx_fire_sea');
+    sea.setTint(0xff3311);
+    sea.setBlendMode(Phaser.BlendModes.ADD);
+    sea.setAlpha(0.75);
+    sea.setDepth(40);
+    this.time.delayedCall(3000, () => sea.destroy());
+    return '三种火并排:地火(橙黄) / 火雨(紫红) / 火海(深血红)';
+  }
+
+  /**
+   * 一分钟内速通凌天侯的三个阶段 —— 剑域半径与弟子数量都要看得见地变。
+   *
+   * 剑域的正确性只能靠**走进去**验证:站在域外看,它只是一圈发光的线,
+   * 和装饰地砖没有区别。所以这个调试入口会把首领扔在玩家旁边,
+   * 让玩家直接站进域里感受 tick 掉血,同时把三阶的半径依次撑开对比。
+   */
+  public debugLingtianhou(): string {
+    const e = this.spawnBoss('lingtianhou');
+    if (!e) return '敌人池已满';
+    // 贴到玩家身边 —— 剑域是「跟人走的场地」,离太远就完全看不到效果
+    e.setPosition(this.player.x + 160, this.player.y - 60);
+    return '凌天侯登场(剑域已开,站进去会持续掉血)';
+  }
+
+  /** 把当前首领的血量直接压到指定比例,用来快速验证阶段切换(剑域半径突变) */
+  public debugBossToPhase(ratio: number): string {
+    const e = this.bossSystem.current;
+    if (!e || !e.active || e.isDead) return '场上没有首领';
+    e.health = Math.max(1, e.maxHealth * ratio);
+    return `首领血量压到 ${Math.round(ratio * 100)}%`;
   }
 
   /** 直接跳到某个时刻,用来验证 Boss 时间表与节奏 */

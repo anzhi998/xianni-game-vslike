@@ -217,6 +217,8 @@ export interface DropEntry {
  * charger  冲锋突刺 —— 高危单体,蓄力后突进
  * puller   拉拽牵引 —— 夺走站位主动权
  * boss     首领行为 —— 只负责「按阶段出什么招」,移动仍是直线追击
+ * summon   首领召唤物 —— 与 ranged 同行为(远程点射),但**不进常规刷怪表**:
+ *          只由 boss 的 summon 招召出,普通波次不会自然刷到它
  */
 export type Approach =
   | 'chase'
@@ -229,6 +231,7 @@ export type Approach =
   | 'charger'
   | 'puller'
   | 'boss'
+  | 'summon'    // 首领召唤物:行为同 ranged,但排除在常规刷怪池外
   // ---- 机制怪专属 ----
   | 'gemEater'  // 噬灵虫:追地上的掉落物,吃掉即强化
   | 'hexer'     // 寄魂:缓慢靠近,定期附身附近普通怪

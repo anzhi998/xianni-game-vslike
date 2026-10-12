@@ -12,3 +12,9 @@ dist/
 
 # AI 原图:管线只产出 enemy_*.png / elite_*.png,_raw 是输入,不入仓库
 src/assets/_raw/
+
+# 本地预览输出(make-*.mjs / preview-*.mjs 落到这里),不入仓库
+.preview/
+
+# 美术原始素材仓库(等同 src/assets/_raw/),不入仓库
+assets-src/

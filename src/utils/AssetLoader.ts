@@ -84,6 +84,12 @@ export function expectedTextureKeys(): string[] {
     'fx_boss_cast', 'fx_ring_slam', 'fx_sigil_frame',
     'fx_sworddomain', 'fx_swordslash', 'fx_afterimage',
     'fx_fateseal', 'fx_fatepillar', 'fx_fatemark', 'fx_fateashes',
+    // 命数指的指身。AI 出图(像素风巨指,指尖朝下)+ make-finger.mjs 处理。
+    // 存在时 FingerOfFate 用它,缺失时回退 Graphics 剪影
+    'fx_finger_of_fate',
+    // 朱雀火雨的陨石。AI 出图(紫红陨火,尖端朝左下)+ make-finger.mjs 处理。
+    // 存在时 MeteorFall 用它,缺失时回退 Graphics 锯齿陨石
+    'fx_meteor',
   );
   // 主角四视图。左边由 setFlipX 镜像,不单列 —— 三个键四个朝向。
   // `player` 是缺图兜底,排在最后
@@ -103,6 +109,13 @@ export function expectedTextureKeys(): string[] {
     'proj_zhanluo', 'proj_sand', 'proj_bolt', 'proj_sword_array', 'proj_enemy_shot',
     // 弧带前缘的龙头。**不是死键**:Tornado.prepareHead 会读它(见 SpellConfig)
     'proj_longjuan', 'proj_hufeng',
+    // 首领弹体。三只 Boss 各一色,玩家靠颜色判断「这发谁的招」——
+    // 见 BossConfig 的 ZHUQUE_FEATHER / TIANYUNZI_SIGN / LINGTIANHOU_SWORD。
+    // 这些是**配置驱动**的(texture 字段),不是死键。
+    // 弹体是有方向的图(尤以 `proj_boss_sword` 的横向剑气为甚),
+    // 用 `make-sprite.mjs --out ... --aspect free` 出图,不要走方形裁切的怪物管线。
+    'proj_fire_feather', 'proj_fire_feather_rage',
+    'proj_boss_sign', 'proj_boss_sword',
     // 掉落物
     'xp_gem_0', 'xp_gem_1', 'xp_gem_2', 'xp_gem_3',
     'pickup_chest_wood', 'pickup_chest_jade', 'pickup_chest_gold',

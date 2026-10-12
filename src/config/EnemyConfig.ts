@@ -318,18 +318,50 @@ export const ENEMIES: Record<string, EnemyConfig> = {
   },
 
   /**
-   * 司徒南·试炼幻影 —— 王林挚友/前辈残影,15:00 登场。
-   * 与「试炼」主题呼应 —— 数值故意"没那么吓人":
-   * 接触伤 18(比朱雀 26 低一档),装甲 0.10(最低档),扇形弹 14-18。
-   * 真正的难度来自机制(剑阵/分身,后续会接入),不在数值。
+   * 凌天侯·剑尊分身 —— 天运星大罗剑宗开派老祖,15:00 登场。
+   *
+   * 原著:净涅后期剑修,天运星战力仅次于天运子。真实身份是逆尘界大能
+   * 「灭生老人」外放的一道**监视分身** —— 所以这里的「试炼幻影」换成了
+   * 「剑尊分身」:他的分量不在数值,在于他带的**剑域**与**剑肖十二子**。
+   *
+   * 数值故意「没那么吓人」:接触伤 18(比朱雀 26 低一档),装甲 0.10(最低档),
+   * 扇形弹 14-18。真正的难度来自机制(剑域持续掉血 + 弟子围堵),不在数值。
    */
-  situnan: {
-    id: 'situnan', name: '司徒南·试炼幻影',
+  lingtianhou: {
+    id: 'lingtianhou', name: '凌天侯·剑尊分身',
     approach: 'boss', archetype: 'guardian',
     maxHealth: 9000, speed: 70, contactDamage: 18, xpValue: 400, size: 70,
-    color: 0x6fc8ff, bodyColor: 0xeef0ff,
+    color: 0x9db4d0, bodyColor: 0xe4ecf6,
     armor: 0.10,
     attackRange: 300, fireIntervalMs: 2400, shotSpeed: 260, shotDamage: 14,
-    boss: 'situnan',
+    boss: 'lingtianhou',
+  },
+
+  /**
+   * 剑肖十二子 —— 凌天侯亲手培养的弟子,由 boss 的 summon 招在战斗中召出。
+   *
+   * 原著里他们以**十二生肖**命名(子鼠/丑牛/寅虎…辰龙),每人配一只妖灵、
+   * 得师尊赐一道保命剑气。纸面修为不弱(婴变~阴虚,大师兄辰龙问鼎初期),
+   * 但实战经验极差 —— 在妖灵之地几乎被王林屠尽,只有辰龙活了下来。
+   *
+   * 所以这里他们**就是普通剑修档的杂兵**:威胁来自「剑尊在背后」,
+   * 而不是他们自己有多强。给他们太高的数值会毁掉剑域那道距离题 ——
+   * 玩家会被迫先去清弟子,剑域就退化成了背景装饰。
+   *
+   * ⚠️ 不出现在常规刷怪表里:他们只由 boss 召唤
+   *    (approach: 'summon' —— 见 WaveConfig 的可达性自检与 BossConfig 的 summon 表)。
+   *
+   * ⚠️ `archetype` 复用 `caster`(术修)而不是新开一档:archetype 决定美术分型
+   *    (见 AssetGenerator.generateEnemies 的「archetype × 配表」),新开一档意味着
+   *    还要给整张 archetype 表补一套程序化画法与两个贴图键。剑修弟子是**远程点射**
+   *    的瘦削人形,术修那一套形状本来就贴 —— 不值得为它撑开一个新分型。
+   */
+  sword_disciple: {
+    id: 'sword_disciple', name: '剑肖弟子',
+    approach: 'summon', archetype: 'caster',
+    maxHealth: 150, speed: 92, contactDamage: 12, xpValue: 22, size: 26,
+    color: 0x9db4d0, bodyColor: 0xd8e4f2,
+    armor: 0.04,
+    attackRange: 240, fireIntervalMs: 2600, shotSpeed: 230, shotDamage: 10,
   },
 };

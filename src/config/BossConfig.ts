@@ -150,6 +150,51 @@ export interface BossBlinkDef {
   maxDist: number;
 }
 
+/**
+ * 剑域 —— 凌天侯脚下常驻的「万物皆可斩」领域。
+ *
+ * 与 `rain` 的落点圈有本质区别:火雨是**一次一个圈**,躲开那一下就好;
+ * 剑域是**跟着剑尊走的持续区**,玩家必须决定「要不要进到它身边打」。
+ * 它把「离 Boss 多远」从一个被动结果变成了一个主动选择 ——
+ * 凌天侯的剑域内近身伤害极高,但远程 Build 站在外面输出又慢。
+ *
+ * 判定在 BossSystem 每帧算一次距离,不进 physics —— 领域是「场地」不是「碰撞体」,
+ * 走 overlap 会在玩家擦边的每一帧反复进出,掉血变成抖动。
+ */
+export interface BossDomainDef {
+  /** 领域半径(像素) */
+  radius: number;
+  /** 站在域内每秒掉多少血 */
+  dps: number;
+  /**
+   * 掉血的判定间隔(毫秒)。dps 被切成一小口一小口地扣 ——
+   * 一次性每秒扣一大口会让玩家「不知道自己是怎么死的」,
+   * 而且扣血数字太大、太稀,读不出「我正在被烧」。
+   */
+  tickMs: number;
+}
+
+/**
+ * 剑肖十二子 —— 凌天侯亲手培养的十二名剑修弟子(以十二生肖命名)。
+ *
+ * 「召唤」这一招承载的是他的**性格**:原著的凌天侯恃才傲物,却对剑肖十二子
+ * 极为护短。所以这里不是「随机刷怪」,而是「他叫他的徒弟来」——
+ * 每次召唤都伴随一道点名特效,且弟子有数量上限(十二子只有十二个)。
+ *
+ * ⚠️ 弟子**不是精锐**:原著里他们纸面修为强、实战弱,跟着王林几乎全军覆没。
+ *    所以数值上他们是普通杂兵档,作用是**干扰走位与分散群攻**,
+ *    不是「突然出现一群小 Boss」。他们的威胁来自「剑尊在背后」。
+ */
+export interface BossSummonDef {
+  /** 一次召唤几名弟子 */
+  count: number;
+  /** 弟子的敌人 id(ENEMIES 的键) */
+  type: string;
+  /** 全场上限。超过就不召 —— 十二子只有十二个,且不能让画面变成怪海 */
+  maxAlive: number;
+  intervalMs: number;
+}
+
 export interface BossPhaseDef {
   name: string;
   /** 血量比例高于这个值时处于该阶段 */
@@ -168,6 +213,10 @@ export interface BossPhaseDef {
   fate?: BossFateDef;
   /** 无敌闪现 */
   blink?: BossBlinkDef;
+  /** 剑域:脚下常驻的持续伤害领域 */
+  domain?: BossDomainDef;
+  /** 召唤剑肖十二子 */
+  summon?: BossSummonDef;
   /** 整体出招节奏倍率。>1 = 该阶段出招更快 */
   tempo: number;
 }
@@ -217,16 +266,54 @@ const TIANYUNZI_SIGN: BossShotStyle = {
   trail: false,
 };
 
-/** 司徒南的剑气 —— 与「斩罗决」同源的青白剑芒,但更宽更长 */
-const SITUNAN_SWORD: BossShotStyle = {
+/**
+ * 凌天侯的剑气 —— 青灰凌厉的净荡剑气。
+ *
+ * 原著(动漫第 137 集起)里「凌天侯剑气」表现为**灰/金色**的凌厉剑气,
+ * 自带霸道的灭杀意境 —— 幻无情越退避,剑气越强悍。
+ *
+ * ⚠️ 色相必须与另两只 Boss 拉开。三只的弹体色各据一方:
+ *     朱雀 0xff6622 橙红(火) / 天运子 0x66ddcc 淡青(符) / 凌天侯 0x9db4d0 青灰(剑)。
+ *    剑气选**青灰**而不是纯白:纯白在 ADD 混合下会糊成一片亮斑,
+ *    而青灰自带「铁与霜」的冷感,与朱雀的暖色完全对立。
+ */
+const LINGTIANHOU_SWORD: BossShotStyle = {
   texture: 'proj_boss_sword',
-  color: 0x88ccff,
+  color: 0x9db4d0,
   spin: 0,
   trail: false,
 };
 
 /** 天运子命数指的落点圈颜色 —— 与它的签文同源的金,但更沉 */
 const TIANYUNZI_FINGER_COLOR = 0xd8b860;
+
+/**
+ * 朱雀火雨的陨石色 —— 紫红。
+ *
+ * 三种「火」必须在色相上互不相同,这是玩家判断「这团火归谁」的唯一线索:
+ *
+ * | 火 | 色 | 形态 |
+ * |---|---|---|
+ * | 玩家火海(焚天) | 0xff3311 深血红 | 地面燃烧区,自叠 |
+ * | 地图地火(灵脉) | 0xff8833 橙黄 | 地面柱状持续喷发 |
+ * | 朱雀火雨 | **0xcc33cc 紫红** | 天上斜坠的陨石 |
+ *
+ * ⚠️ 它**不跟随** `ZHUQUE_FEATHER.color`(弹体的橙红 0xff6622)。弹体与场所
+ *    是两套配色体系:火羽橙红是为了「快、锐、在飞」,陨石紫红是为了「归属」。
+ */
+export const METEOR_COLOR = 0xcc33cc;
+
+/**
+ * 剑域贴图(`fx_sworddomain`,160×160)画出来的**内容半径**。
+ *
+ * 贴图的外环画在距中心 72px 处,所以这张图「代表」一个半径 72 的圆。
+ * `GameScene.updateBossDomain` 用 `state.radius / 这个值` 反算缩放 ——
+ * 于是配表里的 `domain.radius` 一改,画面上的圈跟着变,而判定用的也是同一个数。
+ *
+ * ⚠️ **改贴图就必须改这里。** 视觉圈与实际判定错开,比「根本没有圈」更糟:
+ *    玩家会开始不信任何地面标记,连带火雨那套预警圈一起失去意义。
+ */
+export const SWORD_DOMAIN_TEXTURE_RADIUS = 72;
 
 export const BOSSES: Record<string, BossDef> = {
 
@@ -350,20 +437,33 @@ export const BOSSES: Record<string, BossDef> = {
   },
 
   /**
-   * 司徒南·试炼幻影 —— 15:00(900s),王林挚友/前辈残影
+   * 凌天侯·剑尊分身 —— 15:00(900s)
    *
-   * 文档定位:剑阵围杀 + 分身戏耍(低伤高频率)。
-   * 设计**专攻清小怪的 Builds** —— 15:00 玩家法术面板通常已有 3-4 门
-   * 群攻(剑阵/火海/五雷),这些法术只有"怪扎堆"时才有输出;
-   * 司徒南的剑阵**强制把怪向场心吸**且**自己分裂 3 个分身分散站位**,
-   * 群攻打到的怪数被拆散,等于**暗中削掉群攻 Build 的有效输出**。
-   * 物理 Build(寂灭指/化魔指/斩罗决)反而舒服。
+   * 原著:《仙逆》洞府界天运星大罗剑宗开派老祖,人称**剑尊**,
+   * 净涅后期修为,天运星战力仅次于天运子。修**大罗诛剑道**,不需要法宝,
+   * 仅凭神魂便能凝聚亿万斩道剑气;又亲手培养**剑肖十二子**(以十二生肖命名)。
+   * 他的真实身份是逆尘界大能「灭生老人」外放的一道**分身**,任务是监视天运子 ——
+   * 所以标题里的「分身」不是修辞,是他的设定本身。
+   *
+   * 与另两只 Boss 的**走位题**刻意错开三类:
+   *
+   *   - 朱雀考「往哪躲」—— 弹幕是问题,走位是答案(动态威胁)
+   *   - 天运子考「先清谁」—— 压力在别的小怪身上,要分配火力(纵向分配)
+   *   - 凌天侯考「站哪打」—— 威胁是**一块地**,而这块地跟着他走(静态区)
+   *
+   * 这一招「剑域」是本次改动的核心:领域**跟着剑尊移动**,半径随阶段扩大。
+   * 于是「近身输出」不再是无脑最优 —— 贴着他打 DPS 最高,但每秒掉血;
+   * 远程 Build 可以站在域外安全输出,代价是命中率与 DPS。玩家必须**算一个距离**,
+   * 这是三只 Boss 里唯一一道「空间取舍题」,而不是「反应题」。
+   *
+   * 剑肖十二子是第二层:他们本身很弱(原著里几乎是纸面修为,实战被王林屠尽),
+   * 作用是**打断玩家的距离计算** —— 你想站在域外慢慢磨,十二子就从背后围上来。
    *
    * 数值(9000)介于朱雀(4000)与天运子(10000)之间 —— 第一次见 Boss 的玩家
-   * 不能被秒杀(伤害=18,弱于朱雀),但拖长=剑阵越吸越紧,主动出招。
+   * 不能被秒杀(接触伤 18,弱于朱雀),但拖长=剑域越张越大、弟子越聚越多。
    */
-  situnan: {
-    id: 'situnan', name: '司徒南·试炼幻影',
+  lingtianhou: {
+    id: 'lingtianhou', name: '凌天侯·剑尊分身',
     atSeconds: 900,
     drops: [
       { kind: 'chest', payload: 'gold' },
@@ -371,16 +471,26 @@ export const BOSSES: Record<string, BossDef> = {
     ],
     phases: [
       {
-        name: '剑阵·初动', hpAbove: 0.55, speed: 70, tempo: 1,
-        fan: { count: 4, spread: 1.2, damage: 14, speed: 260, intervalMs: 2400, ...SITUNAN_SWORD },
+        // 一阶:刚亮剑。剑域很小(140px),只够逼玩家别贴脸站着;弟子两人一轮
+        name: '剑域·初开', hpAbove: 0.6, speed: 70, tempo: 1,
+        fan: { count: 4, spread: 1.2, damage: 14, speed: 260, intervalMs: 2400, ...LINGTIANHOU_SWORD },
+        domain: { radius: 140, dps: 16, tickMs: 500 },
+        summon: { count: 2, type: 'sword_disciple', maxAlive: 6, intervalMs: 6000 },
       },
       {
-        name: '剑阵·合围', hpAbove: 0.25, speed: 78, tempo: 1,
-        fan: { count: 6, spread: 1.4, damage: 16, speed: 280, intervalMs: 2000, ...SITUNAN_SWORD },
+        // 二阶:剑域扩张到 210px,「近身输出」的代价开始明显
+        name: '剑域·合围', hpAbove: 0.28, speed: 78, tempo: 1,
+        fan: { count: 6, spread: 1.4, damage: 16, speed: 280, intervalMs: 2000, ...LINGTIANHOU_SWORD },
+        domain: { radius: 210, dps: 22, tickMs: 500 },
+        summon: { count: 3, type: 'sword_disciple', maxAlive: 10, intervalMs: 5200 },
       },
       {
-        name: '剑阵·分身', hpAbove: 0, speed: 92, tempo: 1.15,
-        fan: { count: 8, spread: 1.6, damage: 18, speed: 300, intervalMs: 1700, ...SITUNAN_SWORD },
+        // 三阶:剑域全开 300px,弟子三人一轮 —— 域内几乎没有安全输出位,
+        // 玩家被迫在「掉血换输出」与「退出去但打不动」之间反复权衡
+        name: '剑域·万物皆斩', hpAbove: 0, speed: 92, tempo: 1.15,
+        fan: { count: 8, spread: 1.6, damage: 18, speed: 300, intervalMs: 1700, ...LINGTIANHOU_SWORD },
+        domain: { radius: 300, dps: 30, tickMs: 480 },
+        summon: { count: 3, type: 'sword_disciple', maxAlive: 12, intervalMs: 4600 },
       },
     ],
   },
@@ -403,6 +513,16 @@ export function validateBossSchedule(): string[] {
       // 环形羽爆必须真的成「圈」:片数太少会变成「一圈超长扇形」,缝隙大得毫无压力
       if (p.nova && p.nova.count < 8) {
         bad.push(`${b.name} 的「${p.name}」环形羽爆只有 ${p.nova.count} 片 —— 不构成一圈(至少 8)`);
+      }
+      // 剑域的 tick 必须**明显短于玩家 600ms 无敌帧**。
+      // 等于或长于它,玩家就会在两次 tick 之间反复进出无敌,
+      // 配表上的 dps 变成随机数 —— 这是那次「一半 tick 被吞掉」的直接教训。
+      if (p.domain && p.domain.tickMs > 550) {
+        bad.push(`${b.name} 的「${p.name}」剑域 tick 为 ${p.domain.tickMs}ms —— 超过玩家无敌帧(600ms)前会丢伤害,建议 ≤550`);
+      }
+      // 召唤物必须真的能刷出来(键名对得上 ENEMIES)
+      if (p.summon && p.summon.count > p.summon.maxAlive) {
+        bad.push(`${b.name} 的「${p.name}」一次召 ${p.summon.count} 名但上限只有 ${p.summon.maxAlive} —— 永远召不满`);
       }
     }
   }

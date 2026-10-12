@@ -225,6 +225,13 @@ export class EnemyAiSystem {
       case 'ranged':
         this.ranged(e, px, py, time);
         break;
+      // 首领的召唤物(剑肖十二子)—— 行为就是「远程点射」,与 ranged 完全一致。
+      // 单列一个 approach 不是为了给它不同的 AI,而是为了把它**排除在常规刷怪表外**
+      // (见 WaveConfig 的可达性自检):它只该由 boss 的 summon 招召出,
+      // 平时波次里刷出来就变成了一只没有来历的普通怪。
+      case 'summon':
+        this.ranged(e, px, py, time);
+        break;
       case 'flank':
         this.flank(e, px, py, time);
         break;

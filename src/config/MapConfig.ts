@@ -87,12 +87,24 @@ export const MAPS: Record<string, MapDef> = {
       damage: 14,
       tickMs: 500,
       radius: 78,
-      color: 0xff5522,
+      // ⚠️ 橙黄 0xff8833,不是橙红 0xff5522。三种「火」的色相必须互不相同 ——
+      //    地火原先与朱雀火雨同为 0xff5522,而火雨已改走紫红 0xcc33cc 的陨石。
+      //    玩家火海(焚天)保持深血红 0xff3311:它是**玩家自己**放的,
+      //    本来就该与任何一种敌方/环境火区分开。
+      color: 0xff8833,
     },
   },
 };
 
 export const DEFAULT_MAP_ID = 'zhuque';
+
+/**
+ * 地火柱的兜底色 —— 地图没配 `hazard.color` 时用。
+ *
+ * 与 `MAPS.zhuque.hazard.color` 必须一致,不然「换了地图」和「没换地图」
+ * 会得到两种橙,而色相正是玩家判断归属的依据。
+ */
+export const HAZARD_FALLBACK_COLOR = 0xff8833;
 
 export function getMap(id: string): MapDef {
   return MAPS[id] ?? MAPS[DEFAULT_MAP_ID];
