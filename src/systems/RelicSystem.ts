@@ -76,6 +76,23 @@ export class RelicSystem {
     return id;
   }
 
+  /**
+   * 换下一件已装备的遗物,装上另一件(1 级起)。
+   *
+   * 遗物槽满之后,三选一仍会刷出未拥有的遗物 —— 选定后由替换面板指到这件旧遗物上。
+   * 等级不返还:换下的是取舍,不是回收,这样替换才有决策重量。
+   * 返回是否真的换了(旧件不在或新件已在装 = false,不该进这个函数)。
+   */
+  replace(oldId: string, newId: string): boolean {
+    const i = this.equipped.findIndex((a) => a.id === oldId);
+    if (i < 0 || oldId === newId || this.has(newId)) return false;
+    if (!RELICS[newId]) return false;
+    this.equipped[i] = { id: newId, level: 1 };
+    this.invalidate();
+    this.scene.events.emit(GameEvents.RELIC_EQUIPPED, newId, 1);
+    return true;
+  }
+
   /** 悟道卡「遗物叠层」走这条路。满级返回 false —— 卡片据此隐藏 */
   upgrade(id: string): boolean {
     const inst = this.equipped.find((a) => a.id === id);

@@ -114,6 +114,12 @@ export class Tornado extends Phaser.GameObjects.Container {
    *    这是 60fps 下每只弧带每帧都要走一遍的路径。
    */
   private covered = new Set<Enemy>();
+  /**
+   * 风助火势:弧带每帧把「前缘扫到的范围」报给回调,由 WeaponSystem 决定
+   * 哪些火海被吹大(注入点,见 fireArc)。回调内部按「一次释放」去重,
+   * 所以这里每帧调用是安全的。
+   */
+  private feedWind?: (x: number, y: number, reach: number) => void;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0);
@@ -154,8 +160,11 @@ export class Tornado extends Phaser.GameObjects.Container {
     sharedHits: Map<Enemy, number>,
     texture?: string,
     status: DamageOptions = {},
+    /** 风助火势的注入点(见 feedWind 字段)。龙卷/呼风都传,其余弧带不传 */
+    feedWind?: (x: number, y: number, reach: number) => void,
   ): void {
     this.hitCounts = sharedHits;
+    this.feedWind = feedWind;
     this.facing = facing;
     this.sweep = sweep;
     this.span = span;
@@ -217,6 +226,8 @@ export class Tornado extends Phaser.GameObjects.Container {
     this.elapsedMs += delta;
     this.spin += delta / 1000 * Tornado.SPIN_SPEED;
     const t = Math.min(1, this.elapsedMs / this.lifeMs);
+    // 风助火势:前缘此刻扫到多远,就报多远。带内带外的精细判定在回调那头做
+    if (this.feedWind) this.feedWind(this.x, this.y, Math.max(1, this.radius * t));
     this.draw(t);
     if (t < 1) this.strikeAll(t);
     else this.kill();
@@ -362,6 +373,9 @@ export class Tornado extends Phaser.GameObjects.Container {
     }
     this.isDead = true;
     this.gfx.clear();
+    // 释放结束,风也停了 —— 不清的话,下一发别种法术复用这个池对象时
+    // 会带着上一释放的风助火势回调继续吹
+    this.feedWind = undefined;
     // 龙头是独立子对象,容器 setVisible(false) 不会替它清干净 —— 池化复用时
     // 上一轮的龙头会留在原地(下一次 setup 若换了一门法术,那就是一条黑龙
     // 飘在没有弧带的地方)

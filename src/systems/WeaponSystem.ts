@@ -474,6 +474,21 @@ export class WeaponSystem {
     // 建在这里而不是每道一张,理由见 Tornado.hitCounts 的长注释
     const sharedHits = new Map<Enemy, number>();
 
+    // 风助火势的注入点:把风的当前位置报给每一片扫到的火海。
+    // 「同一片火海只扩一次」的去重**不在**这里 —— 曾建在释放闭包里,
+    // 挡得住一次施放内的八道黑龙,挡不住下一次施放,连发呼风就是无限触发;
+    // 现在由 Zone.windFed 在实例上一票否决(见 expandByWind)。
+    // 判定放宽到「外圈被风掠到就算经过」(前缘半径 + 火海外径),不要求
+    // 火海圆心真的进带 —— 风是面,不是线,吹到边缘也算吹到。
+    const feedWind = (x: number, y: number, reach: number): void => {
+      for (const c of this.pools.zones.children.entries) {
+        const z = c as Zone;
+        if (!z.active || z.isDead) continue;
+        if (Math.hypot(z.x - x, z.y - y) > reach + z.outerRadius) continue;
+        z.expandByWind();
+      }
+    };
+
     for (let i = 0; i < count; i++) {
       const t = this.pools.tornadoPool.get() as Tornado;
       // 池耗尽时返回 null(有限 maxSize),少放一道就少放一道,不抛
@@ -491,6 +506,7 @@ export class WeaponSystem {
         sharedHits,
         sp.texture,
         status,
+        feedWind,
       );
     }
 
@@ -511,6 +527,7 @@ export class WeaponSystem {
           sharedHits,
           sp.texture,
           status,
+          feedWind,
         );
       }
     }

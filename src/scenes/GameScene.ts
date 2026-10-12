@@ -37,7 +37,7 @@ import { SPELLS, BASE_SPELL_IDS, STARTING_SPELL, MAX_SPELL_SLOTS, resolveSpell,
 import { RELICS, RELIC_IDS, POOL_RELIC_IDS, RELIC_SLOTS, validateRelicReachability } from '../config/RelicConfig';
 import { BOSSES, METEOR_COLOR, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
 import { validateBossSchedule } from '../config/BossConfig';
-import { EVOLUTIONS } from '../config/EvolutionConfig';
+import { EVOLUTIONS, findEvolution } from '../config/EvolutionConfig';
 import { HEAL_PILL_FRACTION, XP_PILL_FRACTION } from '../config/EliteConfig';
 import { CONSUMABLES, ALL_CONSUMABLES, CARD_WEIGHTS, consumableCard } from '../config/CultivationUpgradeConfig';
 import { META_PROGRESSION_ENABLED } from '../config/FeatureConfig';
@@ -703,6 +703,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const killed = enemy.takeDamage(dmg, now);
+    // 暴击的打击感:白闪拉长(普通 80ms → 暴击 160ms)+ 命中点星芒。
+    // 放在 takeDamage 之后 —— 那里面刚把 flashUntil 设成普通档,这里压过去
+    if (crit) {
+      enemy.flashUntil = Math.max(enemy.flashUntil, now + 160);
+      this.spawnCritFx(textX, textY);
+    }
     // `afterArmor < amount` 就是「护甲真的削掉了这一发」的判据:
     // 护甲被穿透满了(clamp 到 0)时两边相等,不显示 —— 破防流打不出蓝字是**对的**,
     // 蓝字消失本身就是「我穿透了」的反馈
@@ -1033,11 +1039,54 @@ export class GameScene extends Phaser.Scene {
       level: this.xpSystem.level,
       cards,
       onSelect: (upgrade: Upgrade) => {
+        // 替换卡不在这里生效:槽满时先让玩家挑「换下哪一件」,挑完才装新遗物。
+        // 二级面板走 UpgradeScene.scene.restart —— 对运行中的场景再 launch 是空操作,
+        // restart 会带着新数据完整走一遍 init/create。
+        if (upgrade.needsReplace && !this.relicSystem.hasFreeSlot()) {
+          this.showReplacePanel(upgrade);
+          return;
+        }
         this.applyUpgrade(upgrade);
         this.scene.stop('UpgradeScene');
         // resumeGame 会把还排着队的悟道接着弹出来(见它的注释)。
         // 攒够的修为也要在面板关掉之后再补 —— 在 onSelect 里递归弹面板
         // 会被「对已运行场景再次 launch 是空操作」吃掉
+        this.resumeGame();
+        this.processPendingLevelUps();
+      },
+    });
+  }
+
+  /**
+   * 替换面板:遗物满时选中替换卡后的第二步 —— 从已装备的遗物里挑一件换下。
+   *
+   * 每张卡列出旧遗物的等级,因为换下的代价就是它的全部等级;
+   * 卡的 apply 直接做 replace(oldId → 新遗物),沿用 applyUpgrade 的统一出口,
+   * 保证 stats 重算与 UPGRADE_APPLIED 事件一次不漏。
+   *
+   * 换完没有「反悔退出」:三选一选了替换卡就必须换一件 —— 退出按钮会把
+   * 「这次悟道」变成既没拿到也没花掉,队列状态说不清,不如不做。
+   */
+  private showReplacePanel(pending: Upgrade): void {
+    const cards: Upgrade[] = this.relicSystem.getEquipped().map((r) => ({
+      id: `relicSwap_${r.id}`,
+      type: 'relicSwap',
+      name: `换下 ${RELICS[r.id].name}`,
+      description: `当前 ${r.level} 级 —— 换下即失去它的全部加成,等级不返还`,
+      iconColor: RELICS[r.id].color,
+      apply: (c: UpgradeContext) => {
+        const newId = pending.id.replace(/^newRelic_/, '');
+        if (!c.relicSystem.replace(r.id, newId)) c.relicSystem.equip(newId);
+      },
+    }));
+    (this.scene.get('UpgradeScene') as Phaser.Scene).scene.restart({
+      level: this.xpSystem.level,
+      title: '遗物已满',
+      subtitle: `选择要换下的遗物 —— 换上「${pending.name.replace(/^替换获得 /, '')}」(1 级)`,
+      cards,
+      onSelect: (chosen: Upgrade) => {
+        this.applyUpgrade(chosen);
+        this.scene.stop('UpgradeScene');
         this.resumeGame();
         this.processPendingLevelUps();
       },
@@ -1153,23 +1202,34 @@ export class GameScene extends Phaser.Scene {
    *
    * 读 `POOL_RELIC_IDS` 而不是 `RELIC_IDS`:后者是「定义了哪些遗物」(贴图枚举用),
    * 前者才是「玩家能拿到哪些」—— 收益还没接上的那件(灵石（财）)在这里被挡掉。
+   *
+   * 槽满时**不再把这一类整段清空**:六槽已满只意味着「不能白拿」,
+   * 不意味着「池子干了」。此时出的是替换卡(needsReplace),选中后
+   * 先弹出「换下哪一件」的二级面板再生效 —— 玩家手握取舍权,而不是
+   * 遗物一满三选一就退化成纯消耗品轮盘。
    */
   private cardsNewRelic(): Upgrade[] {
-    if (!this.relicSystem.hasFreeSlot()) return [];
+    const free = this.relicSystem.hasFreeSlot();
     return POOL_RELIC_IDS
       .filter((id) => !this.relicSystem.has(id) && !this.evolutionSystem.isRelicSpent(id))
       .filter((id) => {
         const ex = RELICS[id].exclusive;
         return !ex || this.weaponSystem.hasSpell(ex);
       })
-      .map((id) => ({
-        id: `newRelic_${id}`,
-        type: 'newRelic' as const,
-        name: `获得 ${RELICS[id].name}`,
-        description: RELICS[id].desc(1),
-        iconColor: RELICS[id].color,
-        apply: (c: UpgradeContext) => { c.relicSystem.equip(id); },
-      }));
+      .map((id) => {
+        const replace = !free;
+        return {
+          id: `newRelic_${id}`,
+          type: 'newRelic' as const,
+          name: replace ? `替换获得 ${RELICS[id].name}` : `获得 ${RELICS[id].name}`,
+          description: replace
+            ? `遗物已满 —— 选中后可选择换下一件已有的遗物(1 级起,原等级不返还)\n${RELICS[id].desc(1)}`
+            : RELICS[id].desc(1),
+          iconColor: RELICS[id].color,
+          needsReplace: replace,
+          apply: (c: UpgradeContext) => { c.relicSystem.equip(id); },
+        };
+      });
   }
 
   private cardsRelicLevel(): Upgrade[] {
@@ -1245,6 +1305,31 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({
       targets: img, alpha: 0, scale: img.scale * 1.4, duration: 220,
       onComplete: () => img.destroy(),
+    });
+  }
+
+  /**
+   * 暴击的打击特效:命中点一枚金色星芒,快速放大淡出。
+   *
+   * 为什么**不做震屏**:在这个项目里,震屏是首领落点/范围技能的专属语言
+   * (见 onFingerSlam / onMeteorImpact)。「脚下在震 = 有东西要躲」——
+   * 暴击在怪群里每秒可能发生好几次,它要是也震,玩家就再也分不清
+   * 哪次震动意味着威胁。暴击的「重」交给白闪拉长 + 星芒 + 数字弹跳
+   * 三层去说,手不参与。星芒颜色与 COLOR_CRIT 同一个金 —— 数字与特效必须说同一种话。
+   */
+  private spawnCritFx(x: number, y: number): void {
+    const star = this.add.image(x, y, 'fx_crit');
+    star.setDepth(95);
+    star.setTint(0xffd166);
+    // 无方向纹理,起始角随机 —— 怪堆里同时几颗暴击不会排成一样的姿势
+    star.setRotation(Math.random() * Math.PI);
+    star.setScale(0.7);
+    star.setAlpha(0.95);
+    this.tweens.add({
+      targets: star,
+      scale: 1.6, alpha: 0, rotation: star.rotation + 0.6,
+      duration: 200, ease: 'Cubic.Out',
+      onComplete: () => star.destroy(),
     });
   }
 
@@ -1934,6 +2019,35 @@ export class GameScene extends Phaser.Scene {
     }
     const names: string[] = [];
     for (const st of this.evolutionSystem.readyEvolutions()) {
+      const n = this.evolutionSystem.evolve(st.def.base);
+      if (n) names.push(n);
+    }
+    this.syncPlayerStats();
+    this.refreshHudAfterDebug();
+    return names.length ? `融合:${names.join(' · ')}` : '条件不满足(需要 8 级 + 专属遗物 5 级)';
+  }
+
+  /**
+   * 只凑齐「焚天·火海」与「仙术·呼风」两条融合链。
+   *
+   * 用途是验证**风助火势**:火球落点铺火海,呼风的弧带刮过把火海吹大。
+   * 与「凑齐融合」的差别在那一条把六条链全凑齐,六种特效混在一片里,
+   * 没法看清「弧带经过时火海有没有变大」。
+   */
+  public debugFuseWindFire(): string {
+    this.debugUncapSlots();
+    for (const baseId of ['fireball', 'longjuan']) {
+      const def = findEvolution(baseId);
+      if (!def) continue;
+      if (!this.weaponSystem.hasSpell(baseId)) this.weaponSystem.addSpell(baseId);
+      let guard = 0;
+      while (this.weaponSystem.levelUp(baseId) && guard++ < 20) { /* 推到 8 级 */ }
+      // debugEquip 而不是 equip 的理由见 debugFullEvolution 里的长注释
+      this.relicSystem.debugEquip(def.keyRelic);
+    }
+    const names: string[] = [];
+    for (const st of this.evolutionSystem.readyEvolutions()) {
+      if (st.def.base !== 'fireball' && st.def.base !== 'longjuan') continue;
       const n = this.evolutionSystem.evolve(st.def.base);
       if (n) names.push(n);
     }

@@ -738,6 +738,22 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillStyle(0xffffff, 1);
     g.fillCircle(8, 8, 2);
   });
+
+  // 暴击星芒。白色打底、靠 tint 上色(金色由调用处给)。
+  // 形状必须与 fx_hit 的「通用圆点」拉开 —— 暴击是稀有时刻,它要有自己的形状。
+  // 一律朝「无方向」画(旋转随机起始角),与首领特效同一条约定
+  makeTexture(scene, 'fx_crit', 24, 24, (g) => {
+    g.fillStyle(0xffffff, 1);
+    // 主四芒:细长的十字星
+    g.fillPoints([
+      { x: 12, y: 1 }, { x: 14, y: 10 }, { x: 23, y: 12 }, { x: 14, y: 14 },
+      { x: 12, y: 23 }, { x: 10, y: 14 }, { x: 1, y: 12 }, { x: 10, y: 10 },
+    ], true);
+    // 45° 菱形垫在下面,让星有厚度,不至于缩成一根干瘪的十字
+    g.fillPoints([
+      { x: 12, y: 7.5 }, { x: 16.5, y: 12 }, { x: 12, y: 16.5 }, { x: 7.5, y: 12 },
+    ], true);
+  });
 }
 
 /**

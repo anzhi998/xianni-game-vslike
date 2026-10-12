@@ -41,6 +41,11 @@ export class Zone extends Phaser.GameObjects.Container {
   public damage = 10;
   public stacks = 1;
 
+  /** 当前灼烧半径(风助火势会变大)。只读 —— 改动必须走 expandByWind */
+  get outerRadius(): number {
+    return this.radius;
+  }
+
   private gfx: Phaser.GameObjects.Graphics;
   private enemyGroup!: Phaser.GameObjects.Group;
   private applyDamage!: DamageApplier;
@@ -50,6 +55,8 @@ export class Zone extends Phaser.GameObjects.Container {
   private seaKey = '';
 
   private radius = 70;
+  /** 基准半径 —— 风助火势的放大以此为锚,反复刮不会无界膨胀 */
+  private baseRadius = 70;
   /** 火海的每秒灼烧伤害,叠层时线性叠加 */
   private dps = 0;
   private lifeMs = 3000;
@@ -59,6 +66,8 @@ export class Zone extends Phaser.GameObjects.Container {
   private color = 0xff5522;
   private maxStacks = 1;
   private spin = 0;
+  /** 风助火势是否已吃过一次 —— 一片火海一生只扩一次,去重权在自己手里 */
+  private windFed = false;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0);
@@ -95,8 +104,10 @@ export class Zone extends Phaser.GameObjects.Container {
     this.nextTickAt = 0;
     this.isDead = false;
     this.color = color;
+    this.baseRadius = radius;
     this.maxStacks = Math.max(1, maxStacks);
     this.stacks = 1;
+    this.windFed = false;
     this.spin = Math.random() * Math.PI * 2;
     this.prepareSea(texture);
 
@@ -145,6 +156,32 @@ export class Zone extends Phaser.GameObjects.Container {
   addStack(): boolean {
     if (this.stacks >= this.maxStacks) return false;
     this.stacks++;
+    this.elapsedMs = 0;
+    this.draw(0);
+    return true;
+  }
+
+  /** 风助火势的单次放大幅度 */
+  private static readonly WIND_EXPAND = 1.4;
+
+  /**
+   * 风助火势 —— 龙卷/呼风的弧带刮过:火海被吹大、烧得更久。
+   *
+   * - **一片火海一生只扩一次**:去重标志在实例上(`windFed`),不随施放
+   *   生灭。去重表曾建在 WeaponSystem 的释放闭包里,那挡得住一次施放内的
+   *   八道黑龙,挡不住下一次施放 —— 连发呼风就能把同一片火海反复吹大、
+   *   反复续时,变成无限触发的永动机。火海自己记得有没有被吹过,才堵得死;
+   * - **放大锚定在基准半径上**(一生只 ×1.4,2 倍上限自然永远不会触到,
+   *   随旧去重口径一并删除):「外径即判定」(见类注释),扩大的就是灼烧
+   *   范围本身,不撒谎;
+   * - **存活时间续满**:与叠层同一口径 —— 风把火烧得更旺,也烧得更久。
+   *
+   * @returns 是否真的扩了(已被吹过返回 false)
+   */
+  expandByWind(): boolean {
+    if (this.windFed) return false;
+    this.windFed = true;
+    this.radius = this.baseRadius * Zone.WIND_EXPAND;
     this.elapsedMs = 0;
     this.draw(0);
     return true;

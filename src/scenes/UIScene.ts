@@ -694,6 +694,7 @@ export class UIScene extends Phaser.Scene {
       { label: '开一格法位', run: (g) => g.debugAddSlot() },
       { label: '全部满级', run: (g) => g.debugMaxSpells() },
       { label: '凑齐融合', run: (g) => g.debugFullEvolution() },
+      { label: '凑齐风火融合', run: (g) => g.debugFuseWindFire() },
       { label: '开金匮', run: (g) => g.debugOpenChest() },
       { label: '填满遗物', run: (g) => g.debugGrantAllRelics() },
       { label: '下一只首领', run: (g) => g.debugNextBoss() },

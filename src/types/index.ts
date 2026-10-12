@@ -48,6 +48,7 @@ export type UpgradeType =
   | 'spellLevel'
   | 'newRelic'
   | 'relicLevel'
+  | 'relicSwap'
   | 'consumable'
   | 'evolve';
 
@@ -60,6 +61,12 @@ export interface Upgrade {
   name: string;
   description: string;
   iconColor: number;
+  /**
+   * 遗物槽已满时,「获得新遗物」卡要换成替换流程:选中这张卡后
+   * 不直接生效,而是先弹出「换下哪一件」的二级面板(见 GameScene.showReplacePanel)。
+   * apply 里装的也是「换上新遗物」—— 真正换掉旧件的是替换面板那一步。
+   */
+  needsReplace?: boolean;
   /**
    * 施加升级所需的全部上下文。
    *

@@ -41,6 +41,8 @@ export class DamageText extends Phaser.GameObjects.Text {
   public bornAt = 0;
   public lifeMs = 900;
   public vy = -40;
+  /** 落定后的目标缩放。setup 先弹大、preUpdate 再收回 —— 见两处的注释 */
+  private targetScale = 1;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, '0', {
@@ -74,13 +76,21 @@ export class DamageText extends Phaser.GameObjects.Text {
     this.bornAt = this.scene.time.now;
     this.vy = -40 - (crit ? 20 : 0);
     this.setAlpha(1);
-    this.setScale(crit ? 1.4 : 1);
+    // 暴击数字先弹大再收回落定档(1.4)。**不能**用 tweens 做这个弹跳 ——
+    // 池化对象 kill 后 tween 还挂在上面,复用时会跟下一次 setup 打架;
+    // 衰减自己写在 preUpdate 里,三行,且天然随对象一起停
+    this.targetScale = crit ? 1.4 : 1;
+    this.setScale(crit ? 1.9 : 1);
   }
 
   preUpdate(time: number, delta: number): void {
     if (!this.active) return;
     this.y += this.vy * (delta / 1000);
     this.vy += 30 * (delta / 1000);
+    if (this.scale !== this.targetScale) {
+      const next = this.scale + (this.targetScale - this.scale) * Math.min(1, delta / 1000 * 14);
+      this.setScale(Math.abs(next - this.targetScale) < 0.01 ? this.targetScale : next);
+    }
     const age = time - this.bornAt;
     if (age > this.lifeMs) {
       this.isDead = true;

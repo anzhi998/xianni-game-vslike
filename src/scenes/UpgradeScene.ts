@@ -6,6 +6,8 @@ export class UpgradeScene extends Phaser.Scene {
   private level = 1;
   private kind: 'minor' | 'major' = 'minor';
   private realmName = '';
+  private title = '';
+  private subtitle = '';
   private onSelect?: (u: Upgrade) => void;
   private cards: Upgrade[] = [];
 
@@ -17,6 +19,15 @@ export class UpgradeScene extends Phaser.Scene {
     this.level = data.level || 1;
     this.kind = data.kind === 'major' ? 'major' : 'minor';
     this.realmName = data.realmName || '';
+    // 替换面板等二级流程自带标题;不传则按 major/minor 走默认
+    this.title = data.title || (this.kind === 'major' ? '突破！' : '精进');
+    // 副标题:二级流程(替换面板)可自带;默认按 major/minor 走老文案
+    this.subtitle = data.subtitle
+      ?? (this.kind === 'major'
+        ? `境界突破 · ${this.realmName}`
+        : this.realmName
+          ? `${this.realmName} · 选择一项精进 (Lv ${this.level})`
+          : `选择一项精进 (Lv ${this.level})`);
     this.cards = data.cards ?? [];
     this.onSelect = data.onSelect;
   }
@@ -30,33 +41,36 @@ export class UpgradeScene extends Phaser.Scene {
     this.cameras.main.fadeIn(200, 0, 0, 0);
 
     // 大境界突破用更醒目的配色与标题
-    this.add.text(w / 2, 100, isMajor ? '突破！' : '精进', {
+    this.add.text(w / 2, 100, this.title, {
       fontFamily: 'monospace',
-      fontSize: '48px',
+      fontSize: isMajor ? '48px' : '36px',
       color: isMajor ? '#ffcc44' : '#88ddff',
       fontStyle: 'bold',
     }).setOrigin(0.5).setShadow(0, 3, '#000000', 6, false, true);
 
-    const subtitle = isMajor
-      ? `境界突破 · ${this.realmName}`
-      : `${this.realmName} · 选择一项精进 (Lv ${this.level})`;
-    this.add.text(w / 2, 150, subtitle, {
+    this.add.text(w / 2, 150, this.subtitle, {
       fontFamily: 'monospace',
       fontSize: '20px',
       color: '#ffffff',
     }).setOrigin(0.5);
 
-    const cardW = 280;
-    const cardH = 320;
-    const gap = 30;
     const count = Math.max(1, this.cards.length);
+    // 自适应:三选一的 3 张卡维持 280px;替换面板等 6 张卡的场景按可用宽度
+    // 均分收缩(1280 宽下 6 张 → 175px),宁可卡窄一点也不让面板溢出屏幕
+    const maxTotal = w - 80;
+    let cardW = 280;
+    let gap = 30;
+    if (cardW * count + gap * (count - 1) > maxTotal) {
+      gap = 14;
+      cardW = Math.floor((maxTotal - gap * (count - 1)) / count);
+    }
     const totalW = cardW * count + gap * (count - 1);
     const startX = (w - totalW) / 2 + cardW / 2;
     const cy = h / 2 + 30;
 
     this.cards.forEach((up, i) => {
       const cx = startX + i * (cardW + gap);
-      this.createUpgradeCard(cx, cy, cardW, cardH, up);
+      this.createUpgradeCard(cx, cy, cardW, 320, up);
     });
   }
 
