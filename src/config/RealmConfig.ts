@@ -76,13 +76,17 @@ const NQ_LAYERS = [
   '十一层', '十二层', '十三层', '十四层', '十五层',
 ];
 
-/** 凝气之后原著不再细分十层,统一用 初期/中期/后期/圆满 + 一层 */
-const STAGES = ['初期', '中期', '后期', '圆满'];
+/** 凝气之后原著不再细分十层,统一用 初期/中期/后期/圆满/大圆满 */
+const STAGES = ['初期', '中期', '后期', '圆满', '大圆满'];
 
+/**
+ * 小境界名。⚠️ 名字表必须 ≥ minorSpan:五层境界的第 5 层曾经被
+ * `i % 4` 静默回卷成「初期」,于是每条链都出现「圆满之后又初期」的
+ * 幽灵层(婴变·圆满 → 婴变·初期 → 化神·初期)。这里改为直接截取,
+ * 真不够时宁可让 undefined 冒出来在开发期炸掉,也不再悄悄循环。
+ */
 function stages(n: number): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < n; i++) out.push(STAGES[i % STAGES.length]);
-  return out;
+  return STAGES.slice(0, n);
 }
 
 export const REALMS: MajorRealmDef[] = [
