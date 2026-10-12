@@ -15,6 +15,7 @@ export function generateAllAssets(scene: Phaser.Scene): void {
   generateEnemies(scene);
   generateProjectiles(scene);
   generateRealmProjectiles(scene);
+  generateBossFx(scene);
   generatePickups(scene);
 }
 
@@ -622,7 +623,113 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillCircle(4, 4, 1);
   });
 
-  // 回旋斧投射物(朝向 +X 轴)
+  // 朱雀火羽 —— 首领「火羽扇 / 环形羽爆」的专用弹体,朝 +X,羽尖在前。
+  //
+  // ⚠️ 为什么不能复用 proj_enemy_shot:那是一个 10px 的圆点,它是**术修**的弹。
+  //    首领的招式是它唯一的压迫手段 —— 用一颗小圆点打出去,玩家读到的信息是
+  //    「又有远程杂兵开火了」,而不是「朱雀出招了」。同理也不能复用玩家的
+  //    proj_fireball:那会让「飞向自己」与「飞向敌人」在混战中混为一谈。
+  //
+  //    所以火羽在三个维度上与场上任何弹体都不同:形状(羽 ≠ 球)、尺寸(30px ≠ 10px)、
+  //    色相(金橙的凤凰焰 ≠ 暗红紫的敌弹 / 正红的玩家火球)。三样同时成立,
+  //    关闭特效只看剪影时也分得出「这是首领的招」。
+  //
+  // ⚠️ 羽尖必须在 +X:EnemyShot.setRotation 直接吃飞行角度,画反了就是「羽毛倒着飞」。
+  makeTexture(scene, 'proj_fire_feather', 30, 14, (g) => {
+    const mid = 7;
+    // 外焰:两层渐隐的橙金,拉开「残焰」的层次
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0xff6600, 0.30 - i * 0.08);
+      g.fillTriangle(30 - i * 2, mid, 8 - i * 3, mid - 7 + i * 2, 8 - i * 3, mid + 7 - i * 2);
+    }
+    // 羽身:前窄后阔,尾端收成两点 —— 读起来像一片被风拽着的羽
+    g.fillStyle(0xff8822, 1);
+    g.fillTriangle(28, mid, 6, mid - 5, 6, mid + 5);
+    g.fillStyle(0xffbb55, 1);
+    g.fillTriangle(26, mid, 9, mid - 3, 9, mid + 3);
+    // 羽轴高光
+    g.fillStyle(0xffeebb, 1);
+    g.fillRect(11, mid - 1, 15, 2);
+    // 羽尖白热
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(30, mid, 25, mid - 2, 25, mid + 2);
+    // 尾部两缕分叉的火丝(与玩家的圆头火球彻底区分)
+    g.fillStyle(0xff5500, 0.85);
+    g.fillRect(1, mid - 4, 8, 2);
+    g.fillRect(1, mid + 2, 8, 2);
+    g.fillRect(4, mid - 1, 6, 2);
+  });
+
+  // 涅槃火羽 —— 三阶段「浴火重生」后打出的狂暴羽。比基础火羽更红更亮,
+  // 并且**换一张图**而不是只加缩放:玩家必须能一眼看出「它变强了」。
+  // 同样是 30px 外框(Boss 弹的碰撞圆不随阶段变化,视觉不能反过来暗示更大的判定)
+  makeTexture(scene, 'proj_fire_feather_rage', 30, 16, (g) => {
+    const mid = 8;
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle(0xff2200, 0.34 - i * 0.08);
+      g.fillTriangle(30 - i * 2, mid, 6 - i * 2, mid - 8 + i * 2, 6 - i * 2, mid + 8 - i * 2);
+    }
+    g.fillStyle(0xff3300, 1);
+    g.fillTriangle(28, mid, 6, mid - 6, 6, mid + 6);
+    g.fillStyle(0xff7733, 1);
+    g.fillTriangle(26, mid, 9, mid - 4, 9, mid + 4);
+    // 白热羽轴:狂暴羽的辨识点是这条命中的亮线
+    g.fillStyle(0xfff0cc, 1);
+    g.fillRect(10, mid - 1, 16, 3);
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(30, mid, 24, mid - 3, 24, mid + 3);
+    // 尾部散得更开的三缕残焰
+    g.fillStyle(0xff2200, 0.9);
+    g.fillRect(0, mid - 6, 8, 2);
+    g.fillRect(0, mid - 1, 9, 2);
+    g.fillRect(0, mid + 4, 8, 2);
+  });
+
+  // 天运子的签文 —— 一片淡青的符箓。与朱雀的橙金火羽刻意拉开色相(见 BossConfig)
+  makeTexture(scene, 'proj_boss_sign', 22, 12, (g) => {
+    const mid = 6;
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x2288aa, 0.28 - i * 0.08);
+      g.fillTriangle(22 - i, mid, 5, mid - 6 + i * 2, 5, mid + 6 - i * 2);
+    }
+    g.fillStyle(0x44ccbb, 1);
+    g.fillRect(3, mid - 5, 16, 10);
+    g.fillStyle(0x99ffee, 1);
+    g.fillRect(5, mid - 3, 12, 6);
+    // 符箓上的两道横纹(签文感)
+    g.fillStyle(0x1a6677, 1);
+    g.fillRect(7, mid - 2, 8, 1);
+    g.fillRect(7, mid + 1, 8, 1);
+    g.fillStyle(0xffffff, 1);
+    g.fillRect(19, mid - 1, 3, 2);
+  });
+
+  // 司徒南的剑气 —— 与「斩罗决」同源的一道青白剑芒,但更宽更长
+  makeTexture(scene, 'proj_boss_sword', 34, 14, (g) => {
+    const mid = 7;
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x2288cc, 0.30 - i * 0.09);
+      g.fillRect(2 + i, mid - 6 + i * 2, 30 - i * 3, 12 - i * 4);
+    }
+    g.fillStyle(0x88ddff, 1);
+    g.fillTriangle(10, mid - 4, 26, mid - 3, 26, mid + 3);
+    g.fillTriangle(10, mid + 4, 26, mid - 3, 26, mid + 3);
+    g.fillStyle(0xccf4ff, 1);
+    g.fillRect(12, mid - 2, 14, 4);
+    // 剑尖
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(34, mid, 26, mid - 4, 26, mid + 4);
+    // 后拖的剑气
+    g.fillStyle(0x88ddff, 0.55);
+    g.fillRect(2, mid - 1, 10, 2);
+  });
+
+  // 拖尾用的白点。4×4 的实心圆,靠 tint 上色 ——
+  // 它必须**没有形状**,否则拖尾会变成一串小太阳(见 GameScene 的火羽拖尾)
+  makeTexture(scene, 'fx_spark', 4, 4, (g) => {
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(2, 2, 2);
+  });
 
   // 攻击命中粒子
   makeTexture(scene, 'fx_hit', 16, 16, (g) => {
@@ -630,6 +737,381 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillCircle(8, 8, 6);
     g.fillStyle(0xffffff, 1);
     g.fillCircle(8, 8, 2);
+  });
+}
+
+/**
+ * 首领招式特效
+ *
+ * ## 为什么首领需要一整套「非弹体」的特效
+ *
+ * 弹体贴图解决的是「飞在路上的那一发长什么样」,但一招真正的**体量**来自
+ * 三个弹体之外的时刻:
+ *   1. **出手** —— Boss 抬手蓄力的那一瞬。没有它,弹幕像是凭空刷在脸上;
+ *   2. **落点** —— nova/剑阵/命数指砸下去的地方。没有它,伤害像是从空气里扣的;
+ *   3. **场所** —— 环绕的剑阵、脚下的法域。没有它,阶段机制不可见。
+ *
+ * 原先这三处全都在复用 `fx_hit`(16px 的黄色圆点)。那是个**通用**特效,
+ * 它在杂兵身上是对的,但在首领身上会把「首领出招了」降级成「哪里炸了一下」。
+ * 首领是每局的节奏顶点,它的每一层反馈都该有自己的身份。
+ *
+ * ## 命名与色系约定
+ *
+ * `fx_<boss>_<用途>`。色系跟着该 Boss 的弹体走(见 BossConfig):
+ *   - 司徒南 = 青白剑系(0x88ddff),冷、锐、快 —— 与它的「低伤高频率」同调
+ *   - 天运子 = 青金符系(0x44ccbb 符 / 0xd8b860 金),古、沉、慢
+ * 色系必须与弹体同源,否则玩家无法把「地上炸开的那片」和「打中我的那发」联系起来。
+ *
+ * ## 一律朝「无方向」画
+ *
+ * 这些图都会被旋转使用(或本就该对称),所以**不要**画带朝向的构图 ——
+ * 带朝向的东西一律留给弹体(它们吃 `setRotation(飞行角度)`)。
+ * 唯一例外是下面明确标注了 `朝 +X` 的那几张。
+ */
+function generateBossFx(scene: Phaser.Scene): void {
+  // ---------------------------------------------------------------------
+  // 通用:首领出手阵
+  //
+  // 蓄力前摇(WINDUP_MS)期间贴在 Boss 身上的一圈符文。它是**加法混合**的,
+  // 所以颜色用纯白 + 内圈留暗,靠 tint 上色 —— 一套图服务所有 Boss。
+  //
+  // ⚠️ 中心必须完全透明:Boss 的立绘要透过它露出来。画成实心圆盘的话,
+  //    前摇那 0.3 秒 Boss 会变成一盏灯。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_boss_cast', 64, 64, (g) => {
+    const c = 32;
+    // 外圈:两道同心圆环,一实一虚,读起来像「法阵在转」
+    g.lineStyle(2, 0xffffff, 0.9);
+    g.strokeCircle(c, c, 28);
+    g.lineStyle(1, 0xffffff, 0.5);
+    g.strokeCircle(c, c, 23);
+    // 八个方位的刻痕:外圈上的短放射线。前摇时整张图在自转,
+    // 这些刻痕是「它在转」的唯一线索 —— 没有它们,旋转看不出来
+    g.lineStyle(3, 0xffffff, 0.85);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      const x1 = c + Math.cos(a) * 23;
+      const y1 = c + Math.sin(a) * 23;
+      const x2 = c + Math.cos(a) * 28;
+      const y2 = c + Math.sin(a) * 28;
+      g.lineBetween(x1, y1, x2, y2);
+    }
+    // 内圈:四道短弧,与外圈反向转(靠调用侧的 scale 翻转就行,这里只画一圈)
+    g.lineStyle(2, 0xffffff, 0.6);
+    for (let i = 0; i < 4; i++) {
+      const a0 = (i / 4) * Math.PI * 2;
+      g.beginPath();
+      g.arc(c, c, 17, a0, a0 + 0.7);
+      g.strokePath();
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // 通用:范围招落点的冲击环
+  //
+  // nova / 剑阵 / 命数指砸下去的那一瞬铺在地上的一圈光环。朝**无方向**,
+  // 用 `setScale(radius * 2 / 与) ` 铺到实际范围 —— 所以尺寸只是比例参考。
+  //
+  // ⚠️ 它是**空心**的:环内留透明,地面要看得见。实心圆盘会把落点变成一个
+  //    大白斑,反而盖掉了「这里刚被砸过」的地面反馈(震屏与爆尘)。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_ring_slam', 128, 128, (g) => {
+    const c = 64;
+    // 主环:一圈粗环 + 内侧一道细环,拉出「冲击波有厚度」的层次
+    g.lineStyle(7, 0xffffff, 0.95);
+    g.strokeCircle(c, c, 52);
+    g.lineStyle(2, 0xffffff, 0.55);
+    g.strokeCircle(c, c, 42);
+    g.lineStyle(2, 0xffffff, 0.35);
+    g.strokeCircle(c, c, 60);
+    // 十六道放射短刺:让环看起来是「炸开」而不是「画上去的」
+    // 长短交替 —— 等长的刺会读成一个齿轮,交替才有冲击的不规则感
+    g.lineStyle(4, 0xffffff, 0.8);
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const len = i % 2 === 0 ? 14 : 8;
+      const x1 = c + Math.cos(a) * 52;
+      const y1 = c + Math.sin(a) * 52;
+      const x2 = c + Math.cos(a) * (52 + len);
+      const y2 = c + Math.sin(a) * (52 + len);
+      g.lineBetween(x1, y1, x2, y2);
+    }
+    // 环内的一点点辉光(很淡,只为托住环,不遮地)
+    for (let i = 0; i < 3; i++) {
+      g.lineStyle(6 - i * 2, 0xffffff, 0.10 - i * 0.03);
+      g.strokeCircle(c, c, 46 - i * 6);
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // 通用:落点警示里的符文边
+  //
+  // 给「地面预警圈」(火雨/命数指)叠一层**方形**符文框,把原本的光秃圆圈
+  // 变成「有人在地上写了字」。方与圆叠加是修真法阵的经典构图,
+  // 也让它一眼区别于玩家自己的蓝色范围技(那些是纯圆)。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_sigil_frame', 128, 128, (g) => {
+    const pad = 16;
+    const size = 128 - pad * 2;
+    // 外层方框 + 内层方框(四角断开,读起来像「符」而不是「UI 选中框」)
+    g.lineStyle(3, 0xffffff, 0.85);
+    // 四条边各画中段,角上留缺口
+    const gap = 22;
+    g.lineBetween(pad + gap, pad, pad + size - gap, pad);                       // 上
+    g.lineBetween(pad + gap, pad + size, pad + size - gap, pad + size);         // 下
+    g.lineBetween(pad, pad + gap, pad, pad + size - gap);                       // 左
+    g.lineBetween(pad + size, pad + gap, pad + size, pad + size - gap);         // 右
+    // 四角:各画一个折角(向内拐的短边),把缺口的断口收成「角」
+    g.lineStyle(3, 0xffffff, 0.95);
+    const cg = 16;
+    g.lineBetween(pad, pad + gap, pad, pad + gap - cg + cg); // 左上的竖已画,这里补横
+    g.lineBetween(pad + gap - cg, pad, pad + gap, pad);
+    g.lineBetween(pad + size - gap, pad, pad + size - gap + cg, pad);
+    g.lineBetween(pad + size, pad + gap - cg, pad + size, pad + gap);
+    g.lineBetween(pad, pad + size - gap, pad, pad + size - gap + cg);
+    g.lineBetween(pad + gap - cg, pad + size, pad + gap, pad + size);
+    g.lineBetween(pad + size - gap, pad + size, pad + size - gap + cg, pad + size);
+    g.lineBetween(pad + size, pad + size - gap, pad + size, pad + size - gap + cg);
+    // 内圈的圆:方与圆的接缝,是这套构图的重心
+    g.lineStyle(2, 0xffffff, 0.45);
+    g.strokeCircle(64, 64, 40);
+  });
+
+  // ---------------------------------------------------------------------
+  // 司徒南:剑阵领域
+  //
+  // 「剑阵围杀」的**场所**。原先这一招完全没有视觉主体 —— 只有一堆剑气球
+  // 从 Boss 身上扇形喷出来,玩家看不到「阵」在哪里。
+  //
+  // 画成**环 + 内十字剑痕**:环是围杀的范围,十字是剑意。
+  // 朝无方向,用 tint 上青白色,叠在 Boss 脚下随它走。
+  // ⚠️ 中心留空 —— Boss 站在阵心,不能把它自己盖掉。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_sworddomain', 160, 160, (g) => {
+    const c = 80;
+    // 外环:两圈细环
+    g.lineStyle(2, 0xffffff, 0.75);
+    g.strokeCircle(c, c, 72);
+    g.lineStyle(1, 0xffffff, 0.4);
+    g.strokeCircle(c, c, 62);
+    // 十二柄剑的剪影:沿环均匀分布的小剑(朝心的方向),这是「剑阵」二字的本体
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const rIn = 58;
+      const tipX = c + Math.cos(a) * rIn;
+      const tipY = c + Math.sin(a) * rIn;
+      // 剑尖指向圆心:从环上往里画一个细长三角
+      const baseX = c + Math.cos(a) * (rIn + 14);
+      const baseY = c + Math.sin(a) * (rIn + 14);
+      const perpX = -Math.sin(a) * 3.5;
+      const perpY = Math.cos(a) * 3.5;
+      g.fillStyle(0xffffff, 0.85);
+      g.fillTriangle(tipX, tipY, baseX + perpX, baseY + perpY, baseX - perpX, baseY - perpY);
+    }
+    // 内十字剑痕:两道细长的菱形交叉,是阵心的「剑意」所在
+    g.fillStyle(0xffffff, 0.5);
+    const arm = 34;
+    const w = 3;
+    // 横向
+    g.fillTriangle(c - arm, c, c, c - w, c + arm, c);
+    g.fillTriangle(c - arm, c, c, c + w, c + arm, c);
+    // 纵向
+    g.fillTriangle(c, c - arm, c - w, c, c, c + arm);
+    g.fillTriangle(c, c - arm, c + w, c, c, c + arm);
+  });
+
+  // ---------------------------------------------------------------------
+  // 司徒南:剑气斩痕(命中/落点)
+  //
+  // 一道**斜向**的剑光划痕,青白双色。用在剑气命中玩家、以及剑阵落点。
+  //
+  // `朝 +X` 是刻意的:虽然看起来像「一道痕」,但它要被 `setRotation(角度)`
+  // 转到挥来的方向 —— 一道不跟着来的剑光是说不通的。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_swordslash', 72, 24, (g) => {
+    const mid = 12;
+    // 外辉:一道渐隐的宽光带
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x2288cc, 0.30 - i * 0.09);
+      g.fillTriangle(4 + i * 2, mid - 8 + i * 2, 4 + i * 2, mid + 8 - i * 2, 60 - i * 4, mid);
+    }
+    // 剑光本体:两端收尖的一道柳叶
+    g.fillStyle(0x88ddff, 1);
+    g.fillTriangle(6, mid, 30, mid - 7, 30, mid + 7);
+    g.fillTriangle(66, mid, 30, mid - 7, 30, mid + 7);
+    // 白色核心:细长的一条,是「锐」的来源
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(12, mid, 34, mid - 2, 34, mid + 2);
+    g.fillTriangle(62, mid, 34, mid - 2, 34, mid + 2);
+    // 尾端两层拖丝(切空了的两缕剑气)
+    g.fillStyle(0x88ddff, 0.6);
+    g.fillRect(0, mid - 6, 10, 1);
+    g.fillRect(0, mid + 5, 10, 1);
+  });
+
+  // ---------------------------------------------------------------------
+  // 司徒南:分身残影
+  //
+  // 「分身戏耍」机制。设计文档要求它「分裂 3 个分身分散站位」——
+  // 但机制尚未实现。这里先把**残影**这张图备好:画成一个人形轮廓的虚线体,
+  // 半透明,用于 Boss 闪现(blink)的起落点,以及将来的分身表现。
+  //
+  // ⚠️ 它是**人形剪影**,不是圆形特效:分身一看就必须是「一个我」,
+  //    不是一个光球。轮廓只给肩到脚的一段,不画脸 —— 留白让玩家自己补。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_afterimage', 40, 64, (g) => {
+    // 头
+    g.fillStyle(0x88ddff, 0.45);
+    g.fillCircle(20, 10, 8);
+    // 肩/胸:上宽下窄的梯形
+    g.fillStyle(0x88ddff, 0.40);
+    g.fillTriangle(8, 22, 32, 22, 20, 40);
+    g.fillRect(9, 22, 22, 14);
+    // 双臂:两条垂下的细条
+    g.fillRect(4, 24, 5, 22);
+    g.fillRect(31, 24, 5, 22);
+    // 下摆:散开的道袍
+    g.fillStyle(0x88ddff, 0.30);
+    g.fillTriangle(11, 36, 29, 36, 34, 62);
+    g.fillTriangle(11, 36, 6, 62, 34, 62);
+    // 轮廓高光:只在左侧描一条,给一点体积感
+    g.fillStyle(0xccf4ff, 0.55);
+    g.fillRect(9, 10, 2, 10);
+    g.fillRect(9, 22, 2, 14);
+  });
+
+  // ---------------------------------------------------------------------
+  // 天运子:命数符
+  //
+  // 天运子的**场所与预告**共用一张。它是一道竖长的符箓纹样,
+  // 用于:命数指的落点柱、fate 镀金时在小怪头上闪一下的印记。
+  //
+  // 色系走符青(0x44ccbb)+ 金(0xd8b860)—— 与它的签文弹、落点圈同源。
+  // 朝无方向(竖排,不转)。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_fateseal', 36, 96, (g) => {
+    const cx = 18;
+    // 符纸底:一道很淡的竖长条,给纹样一个「承托面」
+    for (let i = 0; i < 3; i++) {
+      g.fillStyle(0x22aa99, 0.16 - i * 0.04);
+      g.fillRect(4 + i * 2, 2 + i * 3, 28 - i * 4, 92 - i * 6);
+    }
+    // 上下两道横封(符头符尾)
+    g.fillStyle(0x44ccbb, 0.95);
+    g.fillRect(4, 4, 28, 4);
+    g.fillRect(4, 88, 28, 4);
+    // 中央符胆:一个竖长的方框 + 贯穿的一竖,是「命」字的抽象
+    g.lineStyle(3, 0xd8b860, 0.95);
+    g.strokeRect(10, 22, 16, 52);
+    g.lineStyle(3, 0xd8b860, 0.95);
+    g.lineBetween(cx, 16, cx, 80);
+    // 三道横栅:符胆上的刻纹,越往下越短(收势)
+    g.lineStyle(2, 0x44ccbb, 0.85);
+    g.lineBetween(12, 34, 24, 34);
+    g.lineBetween(13, 48, 23, 48);
+    g.lineBetween(14, 62, 22, 62);
+    // 一点金辉:符胆中心,是整张图最亮的地方
+    g.fillStyle(0xffeebb, 0.9);
+    g.fillCircle(cx, 48, 3);
+  });
+
+  // ---------------------------------------------------------------------
+  // 天运子:命数指的落点柱
+  //
+  // 命数指从天而降时,指尖到地面之间**本该有一道光柱** —— 没有它,玩家
+  // 只看到一个圈在缩,不知道东西是从哪来的。这张图是一根竖长条,
+  // 从上（透明)到下(实)渐变,叠在落点圈上。
+  //
+  // ⚠️ 顶端必须渐透:它要接上「看不见的高处」。顶端画实了就成了一个方块。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_fatepillar', 48, 256, (g) => {
+    const cx = 24;
+    // 光柱主体:分 16 段往下画,alpha 由 0.02 线性升到 0.30
+    const segs = 16;
+    const segH = 256 / segs;
+    for (let i = 0; i < segs; i++) {
+      const y = i * segH;
+      const t = i / (segs - 1);
+      g.fillStyle(0xd8b860, 0.02 + t * 0.30);
+      g.fillRect(6, y, 36, segH);
+    }
+    // 中轴亮线:比柱身更亮的细芯,同样是上透下实
+    for (let i = 0; i < segs; i++) {
+      const y = i * segH;
+      const t = i / (segs - 1);
+      g.fillStyle(0xffeecc, 0.04 + t * 0.42);
+      g.fillRect(cx - 4, y, 8, segH);
+    }
+    // 两侧的符纹刻度:每隔一段来一道短短的横纹,把光柱读成「一炷香」
+    for (let i = 3; i < segs; i += 3) {
+      const y = i * segH;
+      const t = i / (segs - 1);
+      g.fillStyle(0x44ccbb, 0.15 + t * 0.35);
+      g.fillRect(2, y, 10, 2);
+      g.fillRect(36, y, 10, 2);
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // 天运子:镀金/命数印记
+  //
+  // `fate` 招的视觉:被强化的小怪应该「头上一亮」。原先完全没有这个反馈,
+  // 玩家只觉得怪忽然变硬了。
+  //
+  // 画成一个小型的对称符印(菱形 + 十字 + 四角点),金色。
+  // 尺寸小(32),因为它要贴在小怪头顶,不能比怪还大。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_fatemark', 32, 32, (g) => {
+    const c = 16;
+    // 外菱形
+    g.lineStyle(2, 0xd8b860, 0.95);
+    g.beginPath();
+    g.moveTo(c, 3);
+    g.lineTo(29, c);
+    g.lineTo(c, 29);
+    g.lineTo(3, c);
+    g.closePath();
+    g.strokePath();
+    // 内十字
+    g.lineStyle(2, 0xffeecc, 0.9);
+    g.lineBetween(c, 8, c, 24);
+    g.lineBetween(8, c, 24, c);
+    // 四角点
+    g.fillStyle(0x44ccbb, 0.95);
+    g.fillCircle(c, 3, 2);
+    g.fillCircle(29, c, 2);
+    g.fillCircle(c, 29, 2);
+    g.fillCircle(3, c, 2);
+    // 中心亮核
+    g.fillStyle(0xffeebb, 0.85);
+    g.fillCircle(c, c, 3);
+  });
+
+  // ---------------------------------------------------------------------
+  // 天运子:命数指的落尘
+  //
+  // 指落之后地面扬起的尘/纸屑。原先 onFingerSlam 用的是通用爆尘。
+  // 画成一小簇不规则的碎屑(不是圆),金色 —— 与「符纸碎掉」呼应。
+  // ---------------------------------------------------------------------
+  makeTexture(scene, 'fx_fateashes', 24, 24, (g) => {
+    // 十余片大小不一的方屑,位置固定(程序化素材不用随机,否则每次热重载都变)
+    const bits: Array<[number, number, number]> = [
+      [3, 5, 3], [10, 2, 2], [17, 6, 3], [7, 11, 2], [14, 12, 3], [20, 15, 2],
+      [4, 17, 3], [11, 19, 2], [18, 21, 3], [2, 12, 2], [22, 9, 2], [13, 4, 2],
+    ];
+    for (const [x, y, s] of bits) {
+      g.fillStyle(0xd8b860, 0.85);
+      g.fillRect(x, y, s, s);
+    }
+    // 亮一点的几片,让这堆碎屑有层次
+    g.fillStyle(0xffeebb, 0.9);
+    g.fillRect(9, 2, 2, 2);
+    g.fillRect(14, 12, 2, 2);
+    g.fillRect(4, 17, 2, 2);
+    // 一点符青的余烬
+    g.fillStyle(0x44ccbb, 0.6);
+    g.fillRect(17, 6, 2, 2);
+    g.fillRect(20, 15, 2, 2);
   });
 }
 

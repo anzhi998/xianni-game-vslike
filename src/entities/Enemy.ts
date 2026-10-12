@@ -87,6 +87,20 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   public bossNextActionAt = 0;
   /** 朱雀「浴火重生」是否已经用过(半血只回满一次) */
   public bossRebornUsed = false;
+  /**
+   * 出招前摇的结束时刻(ms)。在它之前,Boss 会亮一层蓄力光。
+   *
+   * 与 `tellOn` 分开:那只管冲锋/引信,是 AI 自己的行为;
+   * 这个由 BossSystem 写、由渲染读,是**招式级**的预告 ——
+   * 玩家看到光就知道「下一拍它要放招了」,而不是等弹幕出现在脸上。
+   */
+  public bossCastFlashUntil = 0;
+  /** 正在蓄的是哪一招。仅用于前摇的表现(环形羽爆的光应该比扇形更扎眼) */
+  public bossCastKind = '';
+  /** 无敌截止时刻(ms)。天运子「闪现」用它 —— 伤害只有 takeDamage 一个入口 */
+  public invulnerableUntil = 0;
+  /** 是否已被天运子「命数」镀金。每只只镀一次,压力靠轮次累积而不是叠倍率 */
+  public fateBuffed = false;
 
   // ---- 行为状态:全部是 setup() 必须复位的数值字段 ----
   /** 冲锋状态机(charger 专用) */
@@ -259,6 +273,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.bossPhase = 0;
     this.bossNextActionAt = 0;
     this.bossRebornUsed = false;
+    this.bossCastFlashUntil = 0;
+    this.bossCastKind = '';
+    this.invulnerableUntil = 0;
+    this.fateBuffed = false;
 
     this.chargeState = 'approach';
     this.chargePhaseEndsAt = 0;
@@ -284,6 +302,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   takeDamage(amount: number, now: number): boolean {
     if (this.isDead) return false;
+    // 无敌(天运子闪现):不掉血也不触发受击加速 —— 无敌期间的「命中」本就无效
+    if (now < this.invulnerableUntil) return false;
     this.health -= amount;
     this.flashUntil = now + 80;
     if (this.health <= 0) {
@@ -333,6 +353,26 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.maxHealth = Math.min(this.maxHealth * (1 + hpGain), this.baseMaxHealth * 8);
     this.health = this.maxHealth;
     this.speed = Math.min(this.speed + speedGain, this.baseSpeed * 2.5);
+  }
+
+  /**
+   * 天运子「命数」的镀金强化:血、速、伤同时抬一档。
+   *
+   * 与附身的差别在**计费方式**:附身单只翻倍、只发生一次;命数每轮点一片、
+   * 每只也只镀一次 —— 压迫感来自「还没点到的怪迟早也被镀上」,
+   * 所以倍率刻意压得比附身低。速度按 baseSpeed 封顶,与噬灵虫同一套语言。
+   * 血按当前值同比抬而不是回满 —— 回满等于把玩家已打掉的输出白送回去。
+   */
+  applyFateBuff(hpMul: number, speedMul: number, damageMul: number): boolean {
+    if (this.fateBuffed || this.isDead || this.bossKey) return false;
+    this.fateBuffed = true;
+    this.maxHealth *= hpMul;
+    this.health *= hpMul;
+    this.speed = Math.min(this.speed * speedMul, this.baseSpeed * 2.5);
+    this.contactDamage *= damageMul;
+    this.shotDamage *= damageMul;
+    this.xpValue *= 1.5;
+    return true;
   }
 
   /** 蓄力/引信提示的开关。由 EnemyAiSystem 每帧维护 */
@@ -432,12 +472,26 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     if (this.scene.physics.world.isPaused) return;
     if (time < this.flashUntil) {
       this.setTintFill(0xffffff);
+    } else if (time < this.bossCastFlashUntil) {
+      // 首领出招前摇。用**脉动的橙红**而不是静态色:
+      // 静态色在混战里会被当成「精英的描金边」,而玩家需要的是「它在蓄招」这条
+      // 与时间有关的消息 —— 闪一下停一下的节奏本身就传达了「快了」。
+      // 环形羽爆比火羽扇更亮(前摇里那两档色差是给玩家的第一次预警)
+      const pulse = Math.floor(time / 70) % 2 === 0;
+      if (this.bossCastKind === 'nova') this.setTintFill(pulse ? 0xffdd66 : 0xff5511);
+      else this.setTint(pulse ? 0xffaa33 : 0xff7722);
     } else if (this.tellOn) {
       // 蓄力/引信:黄色染色而不是白闪,免得和受击反馈混淆
       this.setTint(0xffcc44);
     } else if (this.possessed) {
       // 被附身:常驻一层青紫,让「必须先点掉的那一只」在一堆怪里认得出来
       this.setTint(0xcc88ff);
+    } else if (time < this.invulnerableUntil) {
+      // 闪现无敌:一层冰蓝,读作「现在打它没用,先走」
+      this.setTint(0x99eeff);
+    } else if (this.fateBuffed) {
+      // 命数镀金:常驻暗金,让「该先清谁」在一堆怪里一眼可辨
+      this.setTint(0xddbb55);
     } else {
       this.clearTint();
     }

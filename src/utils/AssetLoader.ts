@@ -78,6 +78,13 @@ export function expectedTextureKeys(): string[] {
   // 地面持续特效。`fx_fire_sea` = 焚天·火海的火海(Zone),
   // 画布边界必须等于灼烧半径,规则见 docs/美术素材规格.md 的「地面持续特效」
   const keys: string[] = ['fx_hit', 'fx_fire_sea'];
+  // 首领招式特效(非弹体)。弹体走 `proj_boss_*`,这些是出手阵 / 落点环 /
+  // 斩痕 / 场所 / 命数符 / 光柱 / 印记 / 碎屑 —— 规则见 AssetGenerator.bossFx
+  keys.push(
+    'fx_boss_cast', 'fx_ring_slam', 'fx_sigil_frame',
+    'fx_sworddomain', 'fx_swordslash', 'fx_afterimage',
+    'fx_fateseal', 'fx_fatepillar', 'fx_fatemark', 'fx_fateashes',
+  );
   // 主角四视图。左边由 setFlipX 镜像,不单列 —— 三个键四个朝向。
   // `player` 是缺图兜底,排在最后
   keys.push('player_down', 'player_up', 'player_side', 'player');

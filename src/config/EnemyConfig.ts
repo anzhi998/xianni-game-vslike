@@ -299,4 +299,37 @@ export const ENEMIES: Record<string, EnemyConfig> = {
     attackRange: 300, fireIntervalMs: 2200, shotSpeed: 260, shotDamage: 16,
     boss: 'zhuque',
   },
+
+  /**
+   * 天运子·分身 —— 罗天星域天运宗主,20:00 登场。
+   *
+   * 招式(命数镀金 / 无敌闪现)与阶段节奏写在 BossConfig,这里只定
+   * 「它是一只什么样的怪」。血量比朱雀高一档:20:00 的玩家 Build 已近成型,
+   * 而它的机制不直接打血 —— 战斗时长靠闪现的无敌窗口拉长,不靠堆甲。
+   */
+  tianyunzi: {
+    id: 'tianyunzi', name: '天运子·分身',
+    approach: 'boss', archetype: 'guardian',
+    maxHealth: 10000, speed: 64, contactDamage: 34, xpValue: 500, size: 72,
+    color: 0x8855ee, bodyColor: 0xd8b860,
+    armor: 0.22,
+    attackRange: 300, fireIntervalMs: 2800, shotSpeed: 240, shotDamage: 18,
+    boss: 'tianyunzi',
+  },
+
+  /**
+   * 司徒南·试炼幻影 —— 王林挚友/前辈残影,15:00 登场。
+   * 与「试炼」主题呼应 —— 数值故意"没那么吓人":
+   * 接触伤 18(比朱雀 26 低一档),装甲 0.10(最低档),扇形弹 14-18。
+   * 真正的难度来自机制(剑阵/分身,后续会接入),不在数值。
+   */
+  situnan: {
+    id: 'situnan', name: '司徒南·试炼幻影',
+    approach: 'boss', archetype: 'guardian',
+    maxHealth: 9000, speed: 70, contactDamage: 18, xpValue: 400, size: 70,
+    color: 0x6fc8ff, bodyColor: 0xeef0ff,
+    armor: 0.10,
+    attackRange: 300, fireIntervalMs: 2400, shotSpeed: 260, shotDamage: 14,
+    boss: 'situnan',
+  },
 };

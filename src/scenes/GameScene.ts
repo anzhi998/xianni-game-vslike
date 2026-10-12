@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { EnemyShot } from '../entities/EnemyShot';
+import type { ShotStyle } from '../entities/EnemyShot';
 import { BloodTide } from '../entities/BloodTide';
 import { Projectile } from '../entities/Projectile';
 import { Pickup } from '../entities/Pickup';
@@ -12,6 +13,7 @@ import { Tornado } from '../entities/attacks/Tornado';
 import { ChainBolt } from '../entities/attacks/ChainBolt';
 import { Barrier } from '../entities/attacks/Barrier';
 import { FireVent } from '../entities/Hazards/FireVent';
+import { FingerOfFate } from '../entities/Hazards/FingerOfFate';
 import { DamageText } from '../entities/DamageText';
 import type { DamageTextOpts } from '../entities/DamageText';
 import { InputManager } from '../utils/InputManager';
@@ -72,6 +74,7 @@ export class GameScene extends Phaser.Scene {
   public chainBoltPool!: Phaser.GameObjects.Group;
   public barrierPool!: Phaser.GameObjects.Group;
   public fireVentPool!: Phaser.GameObjects.Group;
+  public fingerPool!: Phaser.GameObjects.Group;
 
   // 系统
   public inputManager!: InputManager;
@@ -99,6 +102,18 @@ export class GameScene extends Phaser.Scene {
   private deathHandled = false;
 
   private veilOverlay!: Phaser.GameObjects.Graphics;
+  /** 首领弹体共用的拖尾发射器。见 setupPools —— 它是共享的,不是每发一个 */
+  private shotTrail!: Phaser.GameObjects.Particles.ParticleEmitter;
+  /**
+   * 首领脚下的「场所」图层(剑阵/法域)。
+   *
+   * 它只有一个实例,由 update 每帧挪到当前首领脚下 —— 首领同时最多一只,
+   * 没必要每帧 find 一个 GameObject,更没必要给它建池。
+   * 没有首领时 setVisible(false) 即可。
+   */
+  private bossDomain?: Phaser.GameObjects.Image;
+  /** 上一次见过的前摇结束时刻。与前一个值比对即可拿到「刚进入前摇」的上升沿 */
+  private lastCastSeen = 0;
   private veilAlpha = 0;
   private debugSpellCursor = 0;
   private debugMechCursor = 0;
@@ -231,6 +246,9 @@ export class GameScene extends Phaser.Scene {
     this.barrierPool = this.add.group({ runChildUpdate: false, classType: Barrier, maxSize: 3 });
     // 火柱:预警 1.2s + 喷发 1.6s = 2.8s 一根,8 秒喷 2 根 —— 6 个足够
     this.fireVentPool = this.add.group({ runChildUpdate: false, classType: FireVent, maxSize: 6 });
+    // 命数指:单根寿命约 2.3s(1.6 预警 + 0.26 指落 + 0.42 收尾),
+    // 天运子终阶最快 8.2s 一次、一次 3 根,同屏最多约 3 根 —— 6 是余量
+    this.fingerPool = this.add.group({ runChildUpdate: false, classType: FingerOfFate, maxSize: 6 });
 
     for (let i = 0; i < 200; i++) {
       const e = new Enemy(this, 0, 0);
@@ -242,9 +260,26 @@ export class GameScene extends Phaser.Scene {
       p.setActive(false).setVisible(false);
       this.projectilePool.add(p);
     }
+    // 首领弹体的拖尾。**一个共用发射器**,由每发弹在 setup / kill 里挪位置与开关 ——
+    // 每发新建一个会让 60 发的弹幕池常驻 60 个空闲发射器。
+    // ⚠️ 贴图用一张 4×4 的白点(程序化生成),靠 tint 随弹色变化:
+    //    用 fx_hit 那种带形状的图,拖尾会变成一串小太阳
+    this.shotTrail = this.add.particles(0, 0, 'fx_spark', {
+      lifespan: 300,
+      speed: { min: 0, max: 18 },
+      scale: { start: 0.55, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      quantity: 1,
+      frequency: 26,
+      blendMode: Phaser.BlendModes.ADD,
+      emitting: false,
+    });
+    this.shotTrail.setDepth(77);
+
     for (let i = 0; i < 60; i++) {
       const s = new EnemyShot(this);
       s.setActive(false).setVisible(false);
+      s.bindTrail(this.shotTrail);
       this.enemyShotPool.add(s);
     }
     for (let i = 0; i < 2; i++) {
@@ -306,6 +341,16 @@ export class GameScene extends Phaser.Scene {
       const v = new FireVent(this);
       v.setActive(false).setVisible(false);
       this.fireVentPool.add(v);
+    }
+    for (let i = 0; i < 6; i++) {
+      const f = new FingerOfFate(this);
+      f.setActive(false).setVisible(false);
+      f.bind(
+        () => this.player,
+        (amount, sx, sy) => this.damagePlayer(amount, sx, sy),
+        (x, y, radius) => this.onFingerSlam(x, y, radius),
+      );
+      this.fingerPool.add(f);
     }
   }
 
@@ -406,9 +451,18 @@ export class GameScene extends Phaser.Scene {
 
     this.bossSystem = new BossSystem(this, {
       spawnBoss: (id) => this.spawnBoss(id),
-      spawnShot: (x, y, a, dmg, spd) => this.spawnEnemyShot(x, y, a, dmg, spd, true),
+      spawnShot: (x, y, a, dmg, spd, style) => this.spawnEnemyShot(x, y, a, dmg, spd, true, style),
       spawnVent: (x, y, r, warn, erupt, dmg) => this.spawnFireVent(x, y, r, warn, erupt, dmg),
+      spawnFinger: (x, y, r, warn, dmg, color) => this.spawnFinger(x, y, r, warn, dmg, color),
+      buffEnemies: (n, hpMul, spdMul, dmgMul) => this.applyFateBuffToWave(n, hpMul, spdMul, dmgMul),
+      novaBurst: (x, y, radius, color) => this.spawnSlamRing(x, y, radius, color),
       getPlayer: () => this.player,
+      // 命数指的提前量要读玩家「正在往哪跑」。Player 是 Arcade Sprite,
+      // body.velocity 由 InputManager 每帧写 —— 直接取它,不额外记一份状态
+      getPlayerVelocity: () => {
+        const b = this.player.body as Phaser.Physics.Arcade.Body;
+        return { x: b.velocity.x, y: b.velocity.y };
+      },
     });
 
     this.xpSystem = new XPSystem(this, this.player);
@@ -516,6 +570,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.updatePickupMagnets();
+
+    // 首领的脚下场所(剑阵/法域)。放在 bossSystem.update 之后 ——
+    // 它读的是「这一帧首领在哪」,早一步读到的就是上一帧的位置
+    this.updateBossDomain(time);
+    this.updateBossCastFx();
 
     if (this.player.isDead()) this.onPlayerDeath();
   }
@@ -1104,11 +1163,11 @@ export class GameScene extends Phaser.Scene {
 
   private spawnEnemyShot(
     x: number, y: number, angle: number, damage: number, speed: number,
-    fromBoss = false,
+    fromBoss = false, style?: ShotStyle,
   ): void {
     const shot = this.enemyShotPool.get() as EnemyShot;
     if (!shot) return;
-    shot.setup(x, y, angle, damage, speed, 3000, fromBoss);
+    shot.setup(x, y, angle, damage, speed, 3000, fromBoss, style);
   }
 
   private summonBloodTide(): void {
@@ -1141,6 +1200,8 @@ export class GameScene extends Phaser.Scene {
     const p = this.player;
     const a = Math.random() * Math.PI * 2;
     e.setPosition(p.x + Math.cos(a) * 420, p.y + Math.sin(a) * 420);
+    // 登场特效:首领砸进场地。它是最该被看见的一帧,不能只是「多了一只怪」
+    this.spawnBossEntranceFx(e.x, e.y, this.bossFxColor(enemyKey));
     return e;
   }
 
@@ -1151,6 +1212,54 @@ export class GameScene extends Phaser.Scene {
     v.setup(x, y, radius, warnMs, eruptMs, 500, damage, 0xff5522);
   }
 
+  /** 天运·命数指。池耗尽就少落一根 —— 与火柱同一口径:压力不是伤害承诺 */
+  private spawnFinger(x: number, y: number, radius: number, warnMs: number, damage: number, color: number): void {
+    const f = this.fingerPool.get() as FingerOfFate;
+    if (!f) return;
+    f.setup(x, y, radius, warnMs, damage, color);
+    // 落点预兆:符文框 + 从天垂下的光柱。没有它,玩家只看到地面一个圈在缩,
+    // 不知道东西是从哪来的 —— 「从天而降」这件事必须被看见,那是这一招的全部
+    this.spawnFingerOmenFx(x, y, radius, warnMs, color);
+  }
+
+  /**
+   * 命数指触地的一刻。震屏 + 地面冲击环 + 符纸碎屑。
+   *
+   * 震屏的强度随范围走:它不是装饰,是让「这一下很重」在手上也能感觉到 ——
+   * 玩家在密集怪堆里未必看得清落点,但一定感觉得到脚下在震。
+   */
+  private onFingerSlam(x: number, y: number, radius: number): void {
+    this.cameras.main.shake(180, 0.006 + Math.min(0.006, radius / 40000));
+    // 地面环是「范围」的收尾陈述 —— 指落之后那个圈仍在,等于把判定区域
+    // 又画了一遍给没看清的玩家
+    this.spawnSlamRing(x, y, radius, 0xd8b860);
+    this.spawnFateAshesFx(x, y, radius);
+    this.spawnExplosionFx(x, y, radius * 0.7);
+  }
+
+  /**
+   * 天运子「命数」的落点:从在场小怪里随机点名镀金。
+   *
+   * 首领与已镀过的排除在外(规则写在 Enemy.applyFateBuff),
+   * 这里先把候选筛出来再洗牌 —— 直接全池洗牌会让「场上只剩 3 只可镀
+   * 而 count 是 7」时白白漏掉该镀的那几只。
+   */
+  private applyFateBuffToWave(count: number, hpMul: number, speedMul: number, damageMul: number): number {
+    const candidates = (this.enemyPool.getChildren() as Enemy[])
+      .filter((e) => e.active && !e.isDead && !e.bossKey && !e.fateBuffed);
+    Phaser.Utils.Array.Shuffle(candidates);
+    let n = 0;
+    for (const e of candidates.slice(0, count)) {
+      if (e.applyFateBuff(hpMul, speedMul, damageMul)) {
+        n++;
+        // 头上盖一枚命数印记。原先只有「常驻暗金」这一层状态色 ——
+        // 玩家看见怪变金了,但不知道是**这一秒**被点的,还是它生来就金
+        this.spawnFateMarkFx(e.x, e.y);
+      }
+    }
+    return n;
+  }
+
   private onPlayerHitEnemy(enemy: Enemy): void {
     if (enemy.contactDamage <= 0) return;
     this.damagePlayer(enemy.contactDamage, enemy.x, enemy.y);
@@ -1158,8 +1267,324 @@ export class GameScene extends Phaser.Scene {
 
   private onPlayerHitShot(shot: EnemyShot): void {
     if (!shot.active || shot.isDead) return;
+    // 命中爆焰:用弹体自己的颜色,所以朱雀的火羽炸开是橙金、杂兵的弹是暗红。
+    // 这一小片火焰是「这发打中了」唯一的即时反馈 —— 弹体本身一闪就没,
+    // 只有一个伤害数字的话,密集弹幕里根本分不清是哪一片打中的你
+    //
+    // 首领的剑气**额外**补一道顺着飞行方向的斩痕:同是命中,「被剑划了」
+    // 与「被火点着了」在体感上不是一件事,只换颜色不足以区分。旋转角直接取
+    // 弹体当前的 rotation —— 它已经被拖尾/自转逻辑维护成飞行角了。
+    if (shot.fromBoss) {
+      this.spawnSwordSlashFx(shot.x, shot.y, Phaser.Math.RadToDeg(shot.rotation), shot.hitColor);
+    }
+    this.spawnShotBurst(shot.x, shot.y, shot.hitColor);
     shot.kill();
     this.damagePlayer(shot.damage, shot.x, shot.y);
+  }
+
+  /** 弹体命中玩家的爆焰。自由图元(不走池),寿命 240ms 后自毁 */
+  private spawnShotBurst(x: number, y: number, color: number): void {
+    const img = this.add.image(x, y, 'fx_hit');
+    img.setDepth(89);
+    img.setTint(color);
+    img.setScale(0.7);
+    img.setAlpha(0.9);
+    img.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: img, alpha: 0, scale: 2.1, duration: 240,
+      onComplete: () => img.destroy(),
+    });
+  }
+
+  // =======================================================================
+  // 首领招式特效
+  //
+  // 这一组方法的共同约定:
+  //   - **自由图元,不走池**。它们寿命都很短(160–420ms),而且频率低
+  //     (最快的也是 1.7s 一次),池化省下的那点 GC 抵不上两套生命周期的复杂度。
+  //   - **tween 结束后 destroy()**。没有 onComplete 就是泄漏 —— 这是这一组
+  //     里最容易犯也最难发现的错(项目对象池约定里专门警告过同一类问题)。
+  //   - **一律 ADD 混合**。这些是「光」,不是「贴纸」;不叠加会看起来像 UI。
+  //   - 色系由调用侧传入(cfg 里的弹体色),方法本身不写死 Boss 身份 ——
+  //     这样加第三只 Boss 时只需要给配置,不需要动这里。
+  // =======================================================================
+
+  /**
+   * 首领出手阵。前摇期间贴在首领身上的一圈符文。
+   *
+   * ## 为什么要旋转
+   *
+   * 前摇只有 0.3 秒,玩家未必盯着首领看。转起来的阵在余光里也是动的 ——
+   * 「动」是视野边缘唯一还能被察觉的属性。不转的话它只是首领身上多了个圈,
+   * 玩家会以为那是某种状态图标。
+   *
+   * ## 为什么反向自转一个内层
+   *
+   * 单层转读起来像「一个转盘」;两层反向转读起来像「一个法阵在运作」。
+   * 代价只是多一个 GameObject,而首领出招是每局最该被看清的时刻。
+   */
+  private spawnBossCastFx(x: number, y: number, color: number): void {
+    const outer = this.add.image(x, y, 'fx_boss_cast');
+    outer.setDepth(88);
+    outer.setTint(color);
+    outer.setScale(0.9);
+    outer.setAlpha(0.9);
+    outer.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: outer, angle: 180, scale: 1.25, alpha: 0, duration: 340,
+      onComplete: () => outer.destroy(),
+    });
+
+    const inner = this.add.image(x, y, 'fx_boss_cast');
+    inner.setDepth(88);
+    inner.setTint(0xffffff);
+    inner.setScale(0.5);
+    inner.setAlpha(0.7);
+    inner.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: inner, angle: -220, scale: 0.8, alpha: 0, duration: 340,
+      onComplete: () => inner.destroy(),
+    });
+  }
+
+  /**
+   * 范围招的落点冲击环。
+   *
+   * `radius` 是游戏的碰撞半径(像素),这张图的环画在 52/64 处,所以
+   * 缩放要把「图上的环半径」换算成「真实的碰撞半径」,而不是简单把整图缩到 2r ——
+   * 后者会让视觉范围比判定范围大将近 1/4,玩家会觉得自己在环里却没挨打。
+   */
+  private spawnSlamRing(x: number, y: number, radius: number, color: number): void {
+    const ring = this.add.image(x, y, 'fx_ring_slam');
+    ring.setDepth(85);
+    ring.setTint(color);
+    // 52/64 = 图上环半径占整图半径的比例。除它就等于「让环正好等于 radius」
+    const base = (radius / (52 / 64)) * 2 / 128;
+    ring.setScale(base * 0.55);
+    ring.setAlpha(0.95);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: ring, scale: base, alpha: 0, duration: 320,
+      ease: Phaser.Math.Easing.Cubic.Out,
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /**
+   * 首领登场:一圈符文 + 地面冲击环。
+   *
+   * 首领是每局的节奏顶点,它出现的那一帧必须「有事发生」。原先 spawnBoss
+   * 只是把一只怪摆到玩家 420px 外,没有任何前兆 —— 玩家往往是先挨了一下
+   * 剑气球,才反应过来「哦,出 Boss 了」。
+   */
+  private spawnBossEntranceFx(x: number, y: number, color: number): void {
+    // 落地冲击环:大而慢,像有什么东西砸下来了
+    const ring = this.add.image(x, y, 'fx_ring_slam');
+    ring.setDepth(86);
+    ring.setTint(color);
+    ring.setScale(0.4);
+    ring.setAlpha(0.9);
+    ring.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: ring, scale: 4.2, alpha: 0, duration: 620,
+      ease: Phaser.Math.Easing.Cubic.Out,
+      onComplete: () => ring.destroy(),
+    });
+
+    // 三重符文,错开一点时间升上去 —— 比一次性全放更「隆」
+    for (let i = 0; i < 3; i++) {
+      const seal = this.add.image(x, y, 'fx_boss_cast');
+      seal.setDepth(87);
+      seal.setTint(color);
+      seal.setScale(1.2 + i * 0.5);
+      seal.setAlpha(0.85 - i * 0.15);
+      seal.setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: seal,
+        angle: i % 2 === 0 ? 260 : -260,
+        scale: (1.2 + i * 0.5) * 1.7,
+        alpha: 0,
+        duration: 520 + i * 90,
+        delay: i * 70,
+        onComplete: () => seal.destroy(),
+      });
+    }
+  }
+
+  /**
+   * 剑气命中/剑阵落点:一道斜向斩痕。
+   *
+   * 与 `spawnShotBurst` 的区别在于**朝向** —— 剑气是有来向的,一道不分方向的
+   * 爆炸会把「被剑砍了」和「被火烧了」读成同一件事。这里用 `angle` 让它
+   * 顺着剑气的飞行方向划过去。
+   */
+  private spawnSwordSlashFx(x: number, y: number, angleDeg: number, color: number): void {
+    const slash = this.add.image(x, y, 'fx_swordslash');
+    slash.setDepth(89);
+    slash.setTint(color);
+    slash.setRotation(Phaser.Math.DegToRad(angleDeg));
+    slash.setScale(0.8);
+    slash.setAlpha(0.95);
+    slash.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      // 沿自身的 +X 再推出去一点 —— 剑光命中后会「切过去」,不是钉在原地
+      targets: slash,
+      scaleX: 1.5,
+      scaleY: 1.05,
+      alpha: 0,
+      duration: 220,
+      ease: Phaser.Math.Easing.Cubic.Out,
+      onComplete: () => slash.destroy(),
+    });
+  }
+
+  /**
+   * 命数指的落点柱 + 天启符框。
+   *
+   * 这两张图都要**活到指落为止**(warnMs,1.5–1.7 秒),不能像其他特效那样
+   * 两三百毫秒就散 —— 它们本身就是预告的一部分。所以这里用 tween 的
+   * `duration: warnMs` 而不是一个固定短时长,并且**不淡出到底**:
+   * 收到 0.55 左右就停,让 OnSlam 那一帧还看得见东西。
+   */
+  private spawnFingerOmenFx(x: number, y: number, radius: number, warnMs: number, color: number): void {
+    // 地面符文框:等比铺到落点直径,随预警缓慢收缩(与圈同步收紧的观感)
+    const frame = this.add.image(x, y, 'fx_sigil_frame');
+    frame.setDepth(44); // 贴地,在怪之下
+    frame.setTint(color);
+    const frameScale = (radius * 2.4) / 128;
+    frame.setScale(frameScale * 1.25);
+    frame.setAlpha(0.0);
+    frame.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: frame,
+      alpha: 0.75,
+      scale: frameScale,
+      duration: warnMs,
+      ease: Phaser.Math.Easing.Quadratic.Out,
+      onComplete: () => {
+        this.tweens.add({
+          targets: frame, alpha: 0, scale: frameScale * 1.15, duration: 280,
+          onComplete: () => frame.destroy(),
+        });
+      },
+    });
+
+    // 光柱:从高处垂到落点。锚点在**底部**(与指尖同高),所以 origin.y = 1,
+    // 让它往上长 256px 的图正好接住「看不见的高处」
+    const pillar = this.add.image(x, y, 'fx_fatepillar');
+    pillar.setDepth(45);
+    pillar.setOrigin(0.5, 1);
+    pillar.setTint(color);
+    pillar.setScale((radius * 2) / 48, 1);
+    pillar.setAlpha(0.0);
+    pillar.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: pillar,
+      alpha: 0.8,
+      duration: warnMs * 0.75,
+      ease: Phaser.Math.Easing.Quadratic.In,
+      onComplete: () => {
+        this.tweens.add({
+          targets: pillar, alpha: 0, scaleY: 1.4, duration: 300,
+          onComplete: () => pillar.destroy(),
+        });
+      },
+    });
+  }
+
+  /** 命数指标记(镀金/印记)。贴在小怪头顶 320ms 后自毁 */
+  private spawnFateMarkFx(x: number, y: number): void {
+    const mark = this.add.image(x, y - 22, 'fx_fatemark');
+    mark.setDepth(92);
+    mark.setScale(0.6);
+    mark.setAlpha(0.95);
+    mark.setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: mark, y: y - 30, scale: 1.15, angle: 90, alpha: 0, duration: 320,
+      ease: Phaser.Math.Easing.Quadratic.Out,
+      onComplete: () => mark.destroy(),
+    });
+  }
+
+  /** 命数指落点的碎屑。比通用爆尘多一层「符纸碎了」的语义 */
+  private spawnFateAshesFx(x: number, y: number, radius: number): void {
+    const n = 5;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.6;
+      const d = radius * (0.3 + Math.random() * 0.5);
+      const ash = this.add.image(x, y, 'fx_fateashes');
+      ash.setDepth(90);
+      ash.setScale(0.8 + Math.random() * 0.5);
+      ash.setAlpha(0.9);
+      ash.setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: ash,
+        x: x + Math.cos(a) * d,
+        y: y + Math.sin(a) * d - 10,
+        scale: ash.scale * 1.6,
+        alpha: 0,
+        duration: 380 + Math.random() * 160,
+        ease: Phaser.Math.Easing.Quadratic.Out,
+        onComplete: () => ash.destroy(),
+      });
+    }
+  }
+
+  /**
+   * 首领脚下的「场所」图层。每帧由 update 调到当前首领位置。
+   *
+   * 它**不轮转** —— 场所是背景性的,转起来会抢走弹幕的注意力。
+   * 只做极慢的呼吸(alpha),提示「这里还是阵里」。
+   */
+  private updateBossDomain(time: number): void {
+    const boss = this.bossSystem.current;
+    const alive = !!boss && boss.active && !boss.isDead;
+    if (!alive) {
+      if (this.bossDomain) this.bossDomain.setVisible(false);
+      return;
+    }
+    if (!this.bossDomain) {
+      this.bossDomain = this.add.image(0, 0, 'fx_sworddomain');
+      this.bossDomain.setDepth(42); // 贴地、在怪之下
+      this.bossDomain.setBlendMode(Phaser.BlendModes.ADD);
+    }
+    this.bossDomain.setVisible(true);
+    this.bossDomain.setPosition(boss.x, boss.y);
+    // 呼吸:0.14 ↔ 0.22,周期约 1.6s。够慢,不会读成闪烁
+    this.bossDomain.setAlpha(0.18 + Math.sin(time / 260) * 0.04);
+    // 色系跟着首领走:司徒南青白、天运子青金、朱雀橙金
+    this.bossDomain.setTint(this.bossFxColor(boss.bossKey));
+  }
+
+  /**
+   * 前摇出手阵的触发。BossSystem 只把「正在前摇」写进 Enemy 的
+   * `bossCastFlashUntil`,它不碰画面 —— 这里监听那个字段的**上升沿**
+   * (从 0/过期 变成 未来时刻),在那一帧放一次阵。
+   *
+   * 用上升沿而不是「前摇期间每帧都放」:后者会每帧新建两个 GameObject,
+   * 0.3 秒就是 36 个 —— 一个临时的粒子风暴,而不是一个阵。
+   */
+  private updateBossCastFx(): void {
+    const boss = this.bossSystem.current;
+    if (!boss || !boss.active || boss.isDead) {
+      this.lastCastSeen = 0;
+      return;
+    }
+    const until = boss.bossCastFlashUntil;
+    if (until > 0 && until !== this.lastCastSeen) {
+      this.lastCastSeen = until;
+      this.spawnBossCastFx(boss.x, boss.y, this.bossFxColor(boss.bossKey));
+    }
+  }
+
+  /** 首领的特效色系。跟着它的弹体色走(见 BossConfig),不写死身份 */
+  private bossFxColor(bossKey: string): number {
+    switch (bossKey) {
+      case 'zhuque': return 0xff8822;
+      case 'situnan': return 0x88ddff;
+      case 'tianyunzi': return 0x44ccbb;
+      default: return 0xcccccc;
+    }
   }
 
   private damagePlayer(amount: number, sourceX: number, sourceY: number): void {
@@ -1361,9 +1786,53 @@ export class GameScene extends Phaser.Scene {
     return n ? `灵脉地热喷发 ${n} 处` : '本图没有环境机制';
   }
 
+  /** 手动落一根命数指。落点就是玩家脚下稍微提前一点 —— 调试时要看得见 */
+  public debugFingerOfFate(): string {
+    const b = this.player.body as Phaser.Physics.Arcade.Body;
+    const speed = Math.hypot(b.velocity.x, b.velocity.y);
+    const lead = 90;
+    const x = this.player.x + (speed > 1 ? (b.velocity.x / speed) * lead : 0);
+    const y = this.player.y + (speed > 1 ? (b.velocity.y / speed) * lead : 0);
+    this.spawnFinger(x, y, 100, 1600, 32, 0xd8b860);
+    return '命数指落下';
+  }
+
+  /**
+   * 一次性铺开全部首领特效,用来一眼校验配色与体量。
+   *
+   * 特效是「看一眼才知道对不对」的东西 —— 逐个去等 15/20 分钟的 Boss 刷新
+   * 才能看到它们,调试成本远高于它们本身的价值。所以这里绕开 Boss 时间表
+   * 直接把它们按位置摊开:出手阵、落点环、斩痕、符框、光柱、印记、碎屑,
+   * 一口气全放,确认色系不打架、互相不糊在一起。
+   */
+  public debugBossFx(): string {
+    const cx = this.player.x;
+    const cy = this.player.y;
+    // 出手阵:两个 Boss 的色系各放一次,确认旋转看得见
+    this.spawnBossCastFx(cx - 170, cy - 90, 0x88ddff);
+    this.spawnBossCastFx(cx + 170, cy - 90, 0x44ccbb);
+    // 落点环:青白(司徒南)与金(天运子)
+    this.spawnSlamRing(cx - 170, cy + 20, 110, 0x88ddff);
+    this.spawnSlamRing(cx + 170, cy + 20, 110, 0xd8b860);
+    // 斩痕:四个方向
+    for (let i = 0; i < 4; i++) {
+      this.spawnSwordSlashFx(cx + Math.cos((i / 4) * Math.PI * 2) * 90,
+        cy + Math.sin((i / 4) * Math.PI * 2) * 90,
+        (i / 4) * 360, 0x88ddff);
+    }
+    // 命数指的预言(符框 + 光柱)与实际落下
+    this.spawnFinger(cx, cy, 100, 1600, 32, 0xd8b860);
+    // 印记与碎屑
+    this.spawnFateMarkFx(cx - 60, cy + 80);
+    this.spawnFateMarkFx(cx + 60, cy + 80);
+    this.spawnFateAshesFx(cx, cy + 90, 90);
+    // 登场特效(三重符文 + 大环)
+    this.spawnBossEntranceFx(cx, cy - 140, 0xff8822);
+    return '首领特效全放一遍';
+  }
+
   /** 直接跳到某个时刻,用来验证 Boss 时间表与节奏 */
-  public debugSetTime(seconds: number): string {
-    this.elapsed = seconds * 1000;
+  public debugSetTime(seconds: number): string {    this.elapsed = seconds * 1000;
     return `时间跳到 ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
   }
 

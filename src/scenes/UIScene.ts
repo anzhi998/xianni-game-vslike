@@ -106,11 +106,12 @@ export class UIScene extends Phaser.Scene {
     this.pauseBtn = this.createButton(w - 58, 78, 96, 64, '暂停', 0x333355, 0x6a6aff, 0x4a4a88, () => this.togglePause());
     this.pauseBtn.setDepth(UIScene.DEPTH_HUD);
 
-    // ====== 神通面板(5 格)======
+    // ====== 神通面板(5 格,右下角)======
     // ⚠️ 148 不是 140:标题要画在格子上方(UIScene.HEADER_Y = -18),
     //    而法宝面板在 h-72、它的标题在 630。神通格子底边必须留在 630 之上,
     //    否则**两个面板的标题和格子会互相压**。
-    //    20 是左边距,140/148 这类数字改起来最容易漏掉连带的那一条,故写在这里。
+    //    面板锚在右下:x 由 refresh*() 按当前格数右对齐(右留 20 边距),
+    //    格子变多时面板向左生长,右边缘不动。这里的 20 只是初始值。
     this.spellPanel = this.add.container(20, h - 152);
     this.spellPanel.setDepth(UIScene.DEPTH_HUD);
     this.refreshSpells();
@@ -322,12 +323,16 @@ export class UIScene extends Phaser.Scene {
     // 法位未满时把「还能再带几门」写出来 —— 开局只有 2 格,
     // 「我还能再参悟一门」是早期最重要的一个信息
     const room = cap - spells.length;
+    // 面板贴右缘:右边缘 = 最后一格的右边,标题也右对齐到同一条线上,
+    // 否则格子少时标题会伸到屏幕外
+    const rightEdge = (Math.max(spells.length, 1) - 1) * UIScene.SLOT_PITCH + S;
     this.spellPanel.add([
-      this.add.text(2, UIScene.HEADER_Y, `法位 ${spells.length}/${cap}${room > 0 ? ` · 空 ${room}` : ''}`, {
+      this.add.text(rightEdge - 2, UIScene.HEADER_Y, `法位 ${spells.length}/${cap}${room > 0 ? ` · 空 ${room}` : ''}`, {
         fontFamily: 'monospace', fontSize: '12px',
         color: room > 0 ? '#88ddff' : '#ff9966',
-      }),
+      }).setOrigin(1, 0),
     ]);
+    this.spellPanel.x = GAME_WIDTH - 20 - rightEdge;
 
     spells.forEach((s: any, i: number) => {
       const cfg = SPELLS[s.id];
@@ -367,12 +372,16 @@ export class UIScene extends Phaser.Scene {
     const cap = game.relicSystem.getSlotCap();
     const S = UIScene.SLOT_SIZE;
 
+    // 面板贴右缘(与法术栏同一条右边缘)。格子数含末尾的「空」占位格
+    const shown = Math.max(equipped.length + (equipped.length < cap ? 1 : 0), 1);
+    const rightEdge = (shown - 1) * UIScene.SLOT_PITCH + S;
     this.relicPanel.add([
-      this.add.text(2, UIScene.HEADER_Y, `遗物 ${equipped.length}/${cap}`, {
+      this.add.text(rightEdge - 2, UIScene.HEADER_Y, `遗物 ${equipped.length}/${cap}`, {
         fontFamily: 'monospace', fontSize: '12px',
         color: equipped.length >= cap ? '#ff9966' : '#8899bb',
-      }),
+      }).setOrigin(1, 0),
     ]);
+    this.relicPanel.x = GAME_WIDTH - 20 - rightEdge;
 
     equipped.forEach((a: any, i: number) => {
       const cfg = RELICS[a.id];
@@ -690,6 +699,8 @@ export class UIScene extends Phaser.Scene {
       { label: '下一只首领', run: (g) => g.debugNextBoss() },
       { label: '跳到 10:00', run: (g) => g.debugSetTime(600) },
       { label: '喷一次火柱', run: (g) => g.debugFireHazard() },
+      { label: '落一根命数指', run: (g) => g.debugFingerOfFate() },
+      { label: '演示首领特效', run: (g) => g.debugBossFx() },
       { label: '刷全部怪', run: (g) => g.debugSpawnAllMonsters() },
       { label: '刷精英', run: (g) => g.debugSpawnElite() },
       { label: '投放机制怪', run: (g) => g.debugFireMechanism() },
