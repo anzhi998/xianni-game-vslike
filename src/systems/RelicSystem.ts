@@ -158,6 +158,7 @@ export class RelicSystem {
       m.cooldownMul *= p.cooldownMul ?? 1;
       m.attackSpeedMul *= p.attackSpeedMul ?? 1;
       m.coinMul *= p.coinMul ?? 1;
+      m.xpMul *= p.xpMul ?? 1;
       m.critChance += p.critChance ?? 0;
       m.freezeChance += p.freezeChance ?? 0;
       m.healthRegen += p.healthRegen ?? 0;

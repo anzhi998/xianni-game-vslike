@@ -99,6 +99,17 @@ export class GameScene extends Phaser.Scene {
   public kills = 0;
   /** 灵石。局外强化树还没做,这里只累计、存取档、展示 */
   public coins = 0;
+  /**
+   * 修为宝石的小数尾数结转(聚灵珠)。
+   *
+   * 倍率是百分比,而修为是整数:杂兵的 `xpValue` 就是 1,`1 × 1.06 = 1.06`。
+   * 若直接取整,这件遗物对**最常见**的那一类敌人收益恒为 0 —— 配表写 +30%,实发 0%。
+   * 若把小数值直接灌进 `XPSystem`,那「修为恒为整数」这条不变量就破了
+   * (升级曲线、面板取整、溢出折算全都建立在它上面)。
+   * 于是攒零成整:尾数留在这一格,凑满 1 点才发出去 —— 长期频率精确等于配表,
+   * 一笔账都不多记、也不少记。
+   */
+  private xpCarry = 0;
   /** 当前地图 */
   public map: MapDef = getMap(DEFAULT_MAP_ID);
   /** 是否已经结算过死亡 */
@@ -136,6 +147,7 @@ export class GameScene extends Phaser.Scene {
     this.elapsed = 0;
     this.kills = 0;
     this.coins = 0;
+    this.xpCarry = 0;
     this.deathHandled = false;
 
     this.cameras.main.setBackgroundColor('#1a0f0c');
@@ -838,7 +850,18 @@ export class GameScene extends Phaser.Scene {
   private grantPickup(kind: PickupKind, payload: number | string): void {
     switch (kind) {
       case 'xp': {
-        const amount = typeof payload === 'number' ? payload : 1;
+        const base = typeof payload === 'number' ? payload : 1;
+        // 聚灵珠:只放大**宝石本身**的修为量。加修为丹药(xpPill)与遗物槽满时的
+        // 溢出折算(addXpOverflow)都不走这里 —— 那两处是补偿机制,见 julingzhu 的注释
+        const exact = base * this.relicSystem.getPlayerMods().xpMul;
+        let amount = Math.floor(exact);
+        this.xpCarry += exact - amount;
+        // 攒满一整点就发出去。倍率恒 ≥1,所以 amount 至少等于 base ——
+        // 不会出现「倍率生效了、这一颗宝石反而少给」的情况
+        if (this.xpCarry >= 1) {
+          amount += 1;
+          this.xpCarry -= 1;
+        }
         this.xpSystem.add(amount);
         this.events.emit(GameEvents.XP_COLLECTED, amount);
         return;

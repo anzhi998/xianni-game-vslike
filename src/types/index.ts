@@ -426,6 +426,16 @@ export interface PlayerRelicMods {
   freezeMs: number;
   /** 灵石获取倍率 */
   coinMul: number;
+  /**
+   * 修为宝石获取倍率(聚灵珠)
+   *
+   * 只作用于**敌人掉落的修为宝石**(`PickupKind 'xp'`),不吃「加修为丹药」、
+   * 也不吃遗物槽满时的溢出折算 —— 卡面写着「宝石」,就只承诺宝石。
+   *
+   * 与 `coinMul` 是一对,别合并:一个管局外货币(花不出去,已上闸),
+   * 一个管局内修为(每一级立刻换一张悟道卡)。
+   */
+  xpMul: number;
   /** 每秒回血 */
   healthRegen: number;
   /** 受击回血占最大生命的比例,0 = 无 */
@@ -446,6 +456,7 @@ export const NEUTRAL_PLAYER_MODS: PlayerRelicMods = {
   freezeChance: 0,
   freezeMs: 1000,
   coinMul: 1,
+  xpMul: 1,
   healthRegen: 0,
   lifestealOnHit: 0,
   lifestealCdMs: 0,
