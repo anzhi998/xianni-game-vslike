@@ -55,11 +55,11 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
   public bornAt = 0;
   /** 存活时长(ms)。掉落物必须过期 —— 精英遍地走之后,地上的东西会无限堆积 */
   public lifeMs = 25000;
-  /** 上下浮动动画的基准 y */
-  private baseY = 0;
   private bobPhase = 0;
   /** 本次是否做浮动(由 VISUALS 决定) */
   private bob = false;
+  /** 当前帧的浮动偏移。浮动必须以**增量**写入 y —— 见 preUpdate 里的注释 */
+  private bobOffset = 0;
 
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0, 'xp_gem_0');
@@ -110,8 +110,8 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
     this.bob = vis.bob;
 
     this.setPosition(x, y);
-    this.baseY = y;
     this.bobPhase = 0;
+    this.bobOffset = 0;
     this.setActive(true).setVisible(true);
     this.isDead = false;
     this.bornAt = this.scene.time.now;
@@ -139,10 +139,17 @@ export class Pickup extends Phaser.Physics.Arcade.Sprite {
       return;
     }
 
-    // 稀有掉落做上下浮动,让它们在乱战中更容易被注意到
+    // 稀有掉落做上下浮动,让它们在乱战中更容易被注意到。
+    // ⚠️ 必须用**增量**写 y,不能用 `y = 基准 + sin(...)` 的绝对定位:
+    // 磁吸是靠物理速度每帧把 body 往玩家推几像素,而 body.preUpdate 每帧都会
+    // 从 this.y 重新同步位置。绝对定位会把 y 拉回掉落原点,把磁吸攒下的
+    // 垂直进度整帧抹掉 —— 结果就是宝箱只会在水平方向跟着玩家走,
+    // 垂直方向钉死在掉落点附近,表现为「吸在玩家边上却捡不到」。
     if (this.bob) {
       this.bobPhase += delta / 1000;
-      this.y = this.baseY + Math.sin(this.bobPhase * 4) * 2;
+      const offset = Math.sin(this.bobPhase * 4) * 2;
+      this.y += offset - this.bobOffset;
+      this.bobOffset = offset;
     }
   }
 
