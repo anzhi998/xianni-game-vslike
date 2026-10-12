@@ -704,6 +704,7 @@ export class UIScene extends Phaser.Scene {
       { label: '落一根命数指', run: (g) => g.debugFingerOfFate() },
       { label: '演示首领特效', run: (g) => g.debugBossFx() },
       { label: '三种火对比', run: (g) => g.debugThreeFires() },
+      { label: '弧带形态对比', run: (g) => g.debugArcShapes() },
       { label: '刷全部怪', run: (g) => g.debugSpawnAllMonsters() },
       { label: '刷精英', run: (g) => g.debugSpawnElite() },
       { label: '投放机制怪', run: (g) => g.debugFireMechanism() },

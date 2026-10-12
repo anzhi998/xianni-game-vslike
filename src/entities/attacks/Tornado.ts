@@ -76,7 +76,8 @@ export class Tornado extends Phaser.GameObjects.Container {
   private facing = 0;
   /** 整次释放里绕玩家转过的总角度(弧度)。见类注释「会转不是装饰」 */
   private sweep = 0;
-  /** 本段弧的张角(弧度) */
+  /** 本段弧**自身**的张角(弧度)。由配置的 `arcWidth` 决定(50°),
+   *  **不是**整次释放的总张角 —— 后者是「散布角」,只管 count 道往哪几个方向飞 */
   private span = 1;
   private radius = 224;
   private damage = 8;
@@ -130,7 +131,8 @@ export class Tornado extends Phaser.GameObjects.Container {
 
   /**
    * @param facing  本段弧的中心方向(弧度)。释放时由走位决定
-   * @param span    本段弧的张角(弧度)。整次释放的总张角 ÷ 道数
+   * @param span    本段弧**自身**的张角(弧度)= 配置的 `arcWidth`(50°)。
+   *                不是「总张角 ÷ 道数」—— 那是旧行为,各道首尾相接连成一整片扇面
    * @param pullSpeed 牵引速度(px/s),由「牵引距离 ÷ 牵引时长」在 WeaponSystem 现算
    * @param pullMs    牵引持续时长。与推挤共用同一个手感基准,单一来源在 WeaponSystem
    * @param sweep     整次释放里弧带绕玩家转过的总角度(弧度)。0 = 直线射出

@@ -154,14 +154,25 @@ export interface SpellLevel {
 
   // ---- 弧带 ----
   /**
-   * 弧角(弧度)。龙卷 180° → 220°,仙术·呼风 360°(全周)。
+   * **散布角**(弧度):`count` 道弧弹的**方向**在这个角内均分。
+   * 呼风的「每 45° 一道」正是 360° ÷ 8 道。
    *
-   * ⚠️ 它是**整次释放的总张角**,不是单道龙卷的张角 ——
-   *    `count` 道龙卷把它均分成 `count` 段同心弧(见 WeaponSystem.fireArc)。
-   *    呼风的「每 45° 一道」正是 360° ÷ 8 道,与设计书那句一字不差,
-   *    这就是这条规则成立的证据。
+   * ⚠️ 它管的是「往哪几个方向飞」,**不管单道有多宽** —— 单道宽度看 `arcWidth`。
+   *    1 道时这条不生效(方向就是 facing,与散布角无关)。
    */
   arcSpan?: number;
+  /**
+   * **单道弧弹自身的张角**(弧度)。不填 = 沿用「散布角 ÷ 道数」,
+   * 即各道首尾相接、合成一整片弧面(这是改动前的旧行为)。
+   *
+   * ⚠️ 这一项是「扇形 AOE」与「弧形子弹」的分水岭:
+   *    填了它,相邻两道之间就出现**空档**,整次释放从「一片扇」变成
+   *    「N 道各自飞出去的弯弹」;不填,`count` 道拼起来仍是一整片扇。
+   *
+   * ⚠️ 取值的下限直觉:**单道宽度要明显小于道间距**(= 散布角 ÷ 道数),
+   *    否则空档只有几度,画面上又糊回一片扇。
+   */
+  arcWidth?: number;
   /** 弧半径(格):弧带从脚下旋卷出去的最远距离 */
   arcRadiusGrid?: number;
   /**
@@ -289,6 +300,7 @@ export interface ResolvedSpell {
   clearsShots: boolean;
 
   arcSpan: number;
+  arcWidth: number;
   arcSweep: number;
   arcRadius: number;
   pullPx: number;
@@ -623,22 +635,45 @@ export const SPELLS: Record<string, SpellDef> = {
   // ===== ⑥ 龙卷 · 仙帝传道流 =====
 
   /**
-   * 龙卷 —— 自脚下起步、向外旋卷的弧带,把沿途的敌人往弧线内侧搅。
+   * 龙卷 —— 自脚下起步、向外旋卷的**弧形弹**,把沿途的敌人往弧线内侧搅。
    *
-   * ## 命中模型(这一段决定了下面每一个数字)
+   * ## 形状:一道窄弧,不是一片扇面
+   *
+   * 单道弧弹的张角写在 `arcWidth`(50°),而不是沿用「散布角 ÷ 道数」。
+   * 差别是决定性的:
+   *   - 不填 `arcWidth`(旧行为):`count` 道首尾相接、**拼成一整片扇面**,
+   *     1 级就是 180° 的半张扇,画面上读作「扇形 AOE」;
+   *   - 填了 `arcWidth`(现在):相邻两道之间留出空档,整次释放是
+   *     **N 道各自朝一个方向飞出去的弯弹**,才配得上「弧形子弹」四个字。
+   *
+   * `arcSpan` 因此退回它的本义:**散布角** —— 只管 `count` 道往哪几个方向飞,
+   * 与单道多宽无关。1 道时方向就是 facing,散布角不生效。
+   *
+   * ⚠️ **多道时散布角不能太大**:道间距 = 散布角 ÷ 道数,若它远大于 `arcWidth`,
+   *    正前方会出现一段谁都打不到的死区。2 道取 130°(间距 65°、宽 50°),
+   *    3 道取 220°(间距 73°、宽 50°)—— 前者留 15° 中缝,后者正前由中间那道罩住。
+   *
+   * ## 命中模型
    *
    * 一条弧带是一段**有厚度的圆弧**,从半径 0 向外推进到弧半径为止。
-   * 敌人只要在自己的那一段弧里,就会被刮**两次**:弧线切入时一次,
-   * 弧带卷过其位置时一次(前缘进、后缘出)。因此
+   * 敌人只要被弧带压到,就结算**两次**:前缘切入一次、后缘卷过一次。
    *
-   *     单体 DPS = 道数 × 单道伤害 × 2 ÷ 冷却
+   * ⚠️ 计数表是**本次释放的若干道共用**的(见 Tornado.hitCounts 的长注释),
+   *    所以「同一目标在一次释放里最多吃 2 次」,与道数无关。
+   *    于是单体口径是
    *
-   * 满级 3 × 22 × 2 ÷ 1.30 ≈ 101.5,对齐「8 级 ≈ 100–120」基准。
+   *        单体 DPS = 单道伤害 × 2 ÷ 冷却
+   *
+   *    满级 22 × 2 ÷ 1.30 ≈ 33.8。**不是**旧注释写的 101.5 —— 那个数
+   *    按「每道各记各的账、3 道全中」算,而 3 道窄弧在任意时刻只有 1 道
+   *    罩得住同一个点;呼风的表(2 次/目标)用的也是同一套口径。
+   *    这条是**已知的配表遗留**:龙卷的单体远低于「8 级 ≈ 100–120」基准,
+   *    靠覆盖面与牵引换回来,是否补强待实测。
    *
    * ## 为什么它与厚土术是两种东西
    *
-   * 沙浪是**实心扇面**逐段推、命中有上限、把怪**往外推**;龙卷是**薄弧**整片
-   * 一次飞出去、没有命中上限、把怪**往里拉**。方向相反是刻意的:
+   * 沙浪是**实心扇面**逐段推、命中有上限、把怪**往外推**;龙卷是**窄弧弹**
+   * 一道一道飞出去、没有命中上限、把怪**往里拉**。方向相反是刻意的:
    * 一个聚、一个散,两者同时携带会互相抵消。
    *
    * ## 走位就是瞄准
@@ -655,14 +690,18 @@ export const SPELLS: Record<string, SpellDef> = {
     form: 'arc', texture: 'proj_longjuan', color: 0x5fd9c0,
     keyRelic: 'xiandi_huazhou',
     levels: [
-      { damage: 11, cooldown: 2.20, count: 1, pierce: 0, area: 1, speed: 0, life: 1.10, arcSweep: 0.7854, arcRadiusGrid: 3.0, arcSpan: Math.PI },
-      { damage: 14, cooldown: 2.00, count: 1, pierce: 0, area: 1, speed: 0, life: 1.05, arcSweep: 0.7854, arcRadiusGrid: 3.1, arcSpan: 3.3161 },
-      { damage: 16, cooldown: 1.90, count: 1, pierce: 0, area: 1, speed: 0, life: 1.00, arcSweep: 0.7854, arcRadiusGrid: 3.2, arcSpan: 3.4907, pullGrid: 0.3, note: '命中附带牵引:把散开的怪流搅向弧线内侧' },
-      { damage: 14, cooldown: 1.80, count: 2, pierce: 0, area: 1, speed: 0, life: 1.00, arcSweep: 0.7854, arcRadiusGrid: 3.3, arcSpan: 3.4907, pullGrid: 0.4, note: '龙卷增至 2 道,单道伤害下调换取覆盖面' },
-      { damage: 16, cooldown: 1.70, count: 2, pierce: 0, area: 1, speed: 0, life: 0.95, arcSweep: 0.7854, arcRadiusGrid: 3.4, arcSpan: 3.6652, pullGrid: 0.5 },
-      { damage: 18, cooldown: 1.60, count: 2, pierce: 0, area: 1, speed: 0, life: 0.95, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.6652, pullGrid: 0.6 },
-      { damage: 18, cooldown: 1.45, count: 3, pierce: 0, area: 1, speed: 0, life: 0.90, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.8397, pullGrid: 0.7, note: '龙卷增至 3 道,弧面铺到 220°' },
-      { damage: 22, cooldown: 1.30, count: 3, pierce: 0, area: 1, speed: 0, life: 0.90, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.8397, pullGrid: 0.8 },
+      // ⚠️ arcWidth 恒为 0.8727 = **50°**,它是「弧形弹」这个形状本身,不随等级变。
+      //    1 道时 arcSpan 不生效(方向就是 facing),所以前三级写 0 表示「无散布」。
+      { damage: 11, cooldown: 2.20, count: 1, pierce: 0, area: 1, speed: 0, life: 1.10, arcSweep: 0.7854, arcRadiusGrid: 3.0, arcSpan: 0, arcWidth: 0.8727 },            // 单道 50°
+      { damage: 14, cooldown: 2.00, count: 1, pierce: 0, area: 1, speed: 0, life: 1.05, arcSweep: 0.7854, arcRadiusGrid: 3.1, arcSpan: 0, arcWidth: 0.8727 },
+      { damage: 16, cooldown: 1.90, count: 1, pierce: 0, area: 1, speed: 0, life: 1.00, arcSweep: 0.7854, arcRadiusGrid: 3.2, arcSpan: 0, arcWidth: 0.8727, pullGrid: 0.3, note: '命中附带牵引:把散开的怪流搅向弧线内侧' },
+      // 2 道:散布 130° → 道间距 65°,单道 50°,正前只留 15° 中缝
+      { damage: 14, cooldown: 1.80, count: 2, pierce: 0, area: 1, speed: 0, life: 1.00, arcSweep: 0.7854, arcRadiusGrid: 3.3, arcSpan: 2.2689, arcWidth: 0.8727, pullGrid: 0.4, note: '龙卷增至 2 道,各朝一侧飞出去,单道伤害下调换取覆盖面' },
+      { damage: 16, cooldown: 1.70, count: 2, pierce: 0, area: 1, speed: 0, life: 0.95, arcSweep: 0.7854, arcRadiusGrid: 3.4, arcSpan: 2.3562, arcWidth: 0.8727, pullGrid: 0.5 },
+      { damage: 18, cooldown: 1.60, count: 2, pierce: 0, area: 1, speed: 0, life: 0.95, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 2.4435, arcWidth: 0.8727, pullGrid: 0.6 },
+      // 3 道:散布 220° → 道间距 73°,中间那道正好罩住正前,两侧各留 23° 空档
+      { damage: 18, cooldown: 1.45, count: 3, pierce: 0, area: 1, speed: 0, life: 0.90, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.8397, arcWidth: 0.8727, pullGrid: 0.7, note: '龙卷增至 3 道,中道正前、两侧各一道' },
+      { damage: 22, cooldown: 1.30, count: 3, pierce: 0, area: 1, speed: 0, life: 0.90, arcSweep: 0.7854, arcRadiusGrid: 3.5, arcSpan: 3.8397, arcWidth: 0.8727, pullGrid: 0.8 },
     ],
   },
 
@@ -674,13 +713,18 @@ export const SPELLS: Record<string, SpellDef> = {
    * 画轴满级额外放出第 9 道「主龙」—— 固定在正前方、伤害 ×1.5(= 39);
    * 新增「吹熄」:命中生命低于 20% 的敌人直接抹除。
    *
-   * ⚠️ **配表口径:这是六条路线里唯一「进化后单体反而更弱」的一条**。
-   *    单体 101.5 → 30.6(正前吃主龙也只有 45.9),全体系最低。
+   * ⚠️ **配表口径:这是六条路线里唯一「进化后单体反而变弱」的一条**。
+   *    单体 33.8 → 30.6(正前吃主龙也只有 45.9),全体系最低。
    *    这不是数值事故,是「8 道分散」的固有代价:进化把单体这个维度
-   *    彻底交了出去,换回全周覆盖 + 清尾效率。常态群伤 229 ≈ 基础单体的
+   *    几乎交了出去,换回全周覆盖 + 清尾效率。常态群伤 229 ≈ 基础形态的
    *    ×2.26,正好落在全局「进化约 ×2.2」的基准上。
    *    若实测手感崩盘,旋钮只有一个:把分散折扣 0.8 提到 1.0
    *    (单道 26 → 33),**只调这一个系数,不动结构**。
+   *
+   * ⚠️ 这里**刻意不填 `arcWidth`**:不填 = 单道宽度沿用「散布角 ÷ 道数」
+   *    = 360° ÷ 8 = 45°,八道首尾相接,合起来仍是**覆盖全周的一圈**——
+   *    这是呼风与基础龙卷的分野(龙卷是 N 道分开的弯弹,呼风是一整圈)。
+   *    填了 arcWidth 就会在圆周上开八个 5° 的口子,破坏「全周」这个承诺。
    */
   hufeng: {
     id: 'hufeng', name: '仙术·呼风',
@@ -755,6 +799,7 @@ export function resolveSpell(id: string, level: number): ResolvedSpell | null {
     barrierMs: r.barrierMs ?? 0,
     clearsShots: r.clearsShots ?? false,
     arcSpan: r.arcSpan ?? 0,
+    arcWidth: r.arcWidth ?? 0,
     arcSweep: r.arcSweep ?? 0,
     arcRadius: (r.arcRadiusGrid ?? 0) * g,
     pullPx: (r.pullGrid ?? 0) * g,

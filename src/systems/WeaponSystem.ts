@@ -438,16 +438,21 @@ export class WeaponSystem {
   /**
    * 弧带推进 + 牵引 + (呼风)主龙与吹熄
    *
-   * ## 道数怎么分弧
+   * ## 两个角度:`arcSpan` 管方向,`arcWidth` 管形状
    *
-   * `arcSpan` 是**整次释放的总张角**,`count` 道龙卷把它均分成同心弧。
-   * 基础形态 1 道 = 一整条弧;3 道 = 三段 73° 的同心弧;
-   * 仙术·呼风 8 道 × 360° ÷ 8 = **每 45° 一道**,与设计书那句话一字不差 ——
-   * 这条均分规则不是推出来的,是呼风的 8 道 × 45° 反过来证实的。
+   * `arcSpan` 是**散布角** —— `count` 道弧弹的方向在这个角内均分:
+   * 3 道 × 220° = 每 73° 一道;仙术·呼风 8 道 × 360° ÷ 8 = **每 45° 一道**,
+   * 与设计书那句话一字不差。1 道时散布角不生效(`start + sub*0.5` 恒等于 facing)。
    *
-   * 「同心弧」而不是「都朝同一个方向」是必须的:同向多道会完全重叠,
-   * 于是 3 道只是把同一片弧打了 3 遍(而且各自结算 2 次 = 6 次),
-   * 道数就变成了纯伤害倍率,而不是覆盖面。
+   * `arcWidth` 是**单道弧弹自身的张角**,与散布角无关:
+   *   - 填了(基础龙卷 50°)= 各道之间留空档 → 画面上是 **N 道分开飞出去的弯弹**;
+   *   - 不填(= 沿用 `sub`)= 各道首尾相接 → 合成**一整片弧面**。
+   *     呼风靠「不填」保住它的「全周一圈」,见 SpellConfig 的说明。
+   *
+   * ## 为什么必须分开:同向多道会完全重叠
+   *
+   * 多道若都朝 facing 且宽度不变,3 道只是把同一片弧打了 3 遍,道数就退化成
+   * 纯伤害倍率。所以方向要**分开**(同心弧),这是从呼风的 8×45° 反推出来的规则。
    */
   private fireArc(sp: ResolvedSpell, mods: SpellRelicMods): void {
     // 弧向由释放瞬间的移动方向决定 —— 全体系唯一把走位当瞄准用的形态
@@ -455,10 +460,14 @@ export class WeaponSystem {
     const damage = this.damageOf(sp, mods);
     const status = this.statusOf(sp, mods);
     const count = Math.max(1, sp.count);
-    // 画轴的弧角加成作用在**总张角**上:它买的是覆盖面,不是每道的密度
     const span = Math.min(Math.PI * 2, sp.arcSpan * mods.arcSpanMul);
+    // 道间距。1 道时 sub = 0,而 face 恰好落在 facing 上,散布角无损
     const sub = span / count;
     const start = facing - span / 2;
+    // 单道实际张角。画轴的弧角加成作用**在这里**而不是散布角上:
+    // 加成散布角会把弹打得更散、在正前开出一个谁都打不到的死区,
+    // 而加宽单道是单调的收益 —— 加满时相邻两道几近相切,又变回一片连续弧面。
+    const perArc = sp.arcWidth > 0 ? sp.arcWidth * mods.arcSpanMul : sub;
     const pullSpeed = sp.pullPx / WeaponSystem.PULL_SECONDS;
     const pullMs = WeaponSystem.PULL_SECONDS * 1000;
     // 本次释放的**共用**命中表:同一目标最多结算 2 次,不论被几道刮到。
@@ -471,14 +480,13 @@ export class WeaponSystem {
       if (!t) continue;
       t.setup(
         this.player.x, this.player.y,
-        start + sub * (i + 0.5), sub,
+        start + sub * (i + 0.5), perArc,
         sp.arcRadius,
         damage,
         pullSpeed, pullMs,
         sp.lifeMs,
         sp.color,
-        // 弧角加成只作用于「整次释放的总张角」,弧带的**旋卷量**不随遗物变 ——
-        // 画轴买的是覆盖面,不是转圈数
+        // 弧带的**旋卷量**不随遗物变 —— 画轴买的是覆盖面,不是转圈数
         sp.arcSweep,
         sharedHits,
         sp.texture,
@@ -493,7 +501,7 @@ export class WeaponSystem {
       if (t) {
         t.setup(
           this.player.x, this.player.y,
-          facing, sub,
+          facing, perArc,
           sp.arcRadius,
           damage * sp.mainDragonMul,
           pullSpeed, pullMs,

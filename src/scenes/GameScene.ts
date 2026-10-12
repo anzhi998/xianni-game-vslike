@@ -2019,6 +2019,55 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * 弧带形态一览:把「单道窄弧 / 3 道分开的弧弹 / 呼风的全周一圈」并排摆开。
+   *
+   * 形态是「看一眼才知道对不对」的东西。而龙卷的弧角要从脚下慢慢转出来,
+   * 基础形态与呼风又**不可能同时出现在同一块地上**(一个是 3 道 50° 的弯弹,
+   * 一个是一整圈),所以这里绕开 WeaponSystem 直接按配置把三种弧带摆在
+   * 玩家四周,一次性看清「窄弧」与「整圈」的差别。
+   *
+   * ⚠️ 演示用的这几道**伤害固定 1 点**:一来不会把怪打死(挡着视野),
+   *    二来伤害数字正好在画面上把「弧带覆盖到谁」标出来 —— 弧之外不弹字,
+   *    这就是「只有碰撞到的敌人才结算」最直接的验收方式。
+   */
+  public debugArcShapes(): string {
+    const cx = this.player.x;
+    const cy = this.player.y;
+    // [法术 id, 等级, 落点相对玩家的 x/y, 朝向(弧度,向上 = -π/2)]
+    const shots: Array<[string, number, number, number, number]> = [
+      ['longjuan', 1, -230, 40, -Math.PI / 2],
+      ['longjuan', 8, 0, 40, -Math.PI / 2],
+      ['hufeng', 1, 230, 40, -Math.PI / 2],
+    ];
+    let arcs = 0;
+    for (const [id, lv, dx, dy, face] of shots) {
+      arcs += this.spawnArcPreview(id, lv, cx + dx, cy + dy, face);
+    }
+    return `弧带形态 ×${shots.length} 次(${arcs} 道):左=龙卷1级单道50° / 中=龙卷8级3道 / 右=呼风8道全周`;
+  }
+
+  /** debugArcShapes 的落点实现:按配置摆一次弧带,伤害固定 1 点 */
+  private spawnArcPreview(id: string, level: number, x: number, y: number, facing: number): number {
+    const sp = resolveSpell(id, level);
+    if (!sp) return 0;
+    const count = Math.max(1, sp.count);
+    const sub = sp.arcSpan / count;
+    const start = facing - sp.arcSpan / 2;
+    // 与 WeaponSystem.fireArc 同一套算法:arcWidth 有值就是窄弧,没有才是首尾相接
+    const perArc = sp.arcWidth > 0 ? sp.arcWidth : sub;
+    const hits = new Map<Enemy, number>();
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      const t = this.tornadoPool.get() as Tornado | null;
+      if (!t) break;
+      t.setup(x, y, start + sub * (i + 0.5), perArc, sp.arcRadius, 1,
+        sp.pullPx / 0.25, 250, sp.lifeMs, sp.color, sp.arcSweep, hits, sp.texture);
+      n++;
+    }
+    return n;
+  }
+
+  /**
    * 一分钟内速通凌天侯的三个阶段 —— 剑域半径与弟子数量都要看得见地变。
    *
    * 剑域的正确性只能靠**走进去**验证:站在域外看,它只是一圈发光的线,
