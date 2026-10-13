@@ -18,3 +18,6 @@ src/assets/_raw/
 
 # 美术原始素材仓库(等同 src/assets/_raw/),不入仓库
 assets-src/
+
+# WorkBuddy 本地工作记忆(会话日志/项目笔记),AI 协作用,不入仓库
+.workbuddy/
