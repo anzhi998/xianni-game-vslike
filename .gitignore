@@ -5,6 +5,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+.trae/
 
 # Windows 复制/下载文件时附带的元数据流 —— WSL 下会以 `<原名>:Zone.Identifier`
 # 的形式实体化成文件,内容是 `[ZoneTransfer]` + ZoneId。与工程无关,不提交。
