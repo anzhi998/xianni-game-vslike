@@ -1287,7 +1287,10 @@ export class GameScene extends Phaser.Scene {
   private cardsRelicLevel(keyOnly: boolean): Upgrade[] {
     return this.relicSystem.getEquipped()
       .filter((r) => this.relicSystem.canUpgrade(r.id))
-      .filter((r) => !keyOnly || !!RELICS[r.id].exclusive)
+      // ⚠️ 必须是「=== keyOnly」的二分,不能用 `!keyOnly || isExclusive`:
+      // 后者在通用桶(keyOnly=false)里放行一切,专属遗物同时落进两个桶,
+      // 两桶都被摇中就会出两张一模一样的祭炼卡(实测出现过)。
+      .filter((r) => !!RELICS[r.id].exclusive === keyOnly)
       .map((r) => ({
         id: `relicLevel_${r.id}`,
         type: 'relicLevel' as const,
