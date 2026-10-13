@@ -2,7 +2,7 @@ import type { AttackForm } from '../types';
 import { EVOLUTIONS } from './EvolutionConfig';
 
 /**
- * 神通表 —— 六门法术,每门一张 1–8 级的固定数值表
+ * 神通表 —— 七门法术,每门一张 1–8 级的固定数值表
  *
  * ## 为什么没有「基础值 × 等级倍率」
  *
@@ -222,6 +222,31 @@ export interface SpellLevel {
   skyThunderMs?: number;
   skyThunderDamage?: number;
 
+  // ---- 落锥(drop)----
+  /**
+   * 单道冰锥落地爆炸的半径(格)。圆心在落点上,不在玩家脚下。
+   */
+  dropRadiusGrid?: number;
+  /**
+   * 相邻两道落点的间距(格)。首道落点固定在面向 2 格处(见 WeaponSystem.fireDrop),
+   * 第 i 道在 首落点 + (i-1) × 间距。
+   */
+  dropGapGrid?: number;
+  /**
+   * 预警圈时长(毫秒):圈亮起 → 冰锥坠地。玩家要能靠这 0.4s 走出圈外。
+   */
+  impactDelayMs?: number;
+
+  // ---- 浪扫(wave)----
+  /** 矩形宽(格),垂直于面向,以玩家为轴对称 */
+  rectWidthGrid?: number;
+  /** 矩形长(格),沿面向从脚下延伸到最远端 */
+  rectLengthGrid?: number;
+  /** 浪前推进时长(毫秒):前沿从脚下推到最远端 */
+  waveFrontMs?: number;
+  /** 浪过后残留水洼的存续时长(毫秒)。0 = 没有。水洼只减速不伤 */
+  waveLingerMs?: number;
+
   /** 无视护甲比例(破魔 / 破防) */
   armorPen?: number;
 
@@ -316,6 +341,15 @@ export interface ResolvedSpell {
   skyThunderMs: number;
   skyThunderDamage: number;
 
+  dropRadius: number;
+  dropGap: number;
+  impactDelayMs: number;
+
+  rectWidth: number;
+  rectLength: number;
+  waveFrontMs: number;
+  waveLingerMs: number;
+
   armorPen: number;
 }
 
@@ -328,8 +362,8 @@ export const MAX_SPELL_LEVEL = 8;
  *    这里只声明天花板,给调试面板的「装满神通」用。
  *    WeaponSystem 的当前上限由 RealmSystem 在突破时推进。
  *
- * ⚠️ **法术有 6 门,槽只有 5 个**(设计书 3.5 的收槽,不是配错了):
- *    玩家必须放弃一条路线。化神不再 +1 法位,详见 RealmConfig 的「为什么收槽」。
+ * ⚠️ **法术有 7 门,槽只有 5 个**(设计书 3.5 的收槽,不是配错了):
+ *    玩家必须放弃两条路线。化神不再 +1 法位,详见 RealmConfig 的「为什么收槽」。
  */
 export const MAX_SPELL_SLOTS = 5;
 
@@ -750,6 +784,96 @@ export const SPELLS: Record<string, SpellDef> = {
       },
     ],
   },
+
+  // ===== ⑦ 黄泉升窍诀 · 道化黄泉流 =====
+
+  /**
+   * 黄泉升窍诀 —— 面向依次落下的冰锥,每道原地圆形炸裂。
+   *
+   * ## 几何:点状圆爆的「纵深接力」
+   *
+   * 与扇形(一片实心面)、弧带(几道弯弹)都不同:它是**一串圆**,沿面向纵深排开。
+   * 单怪一次施放只吃 1 道(见 IceSpikeDrop 的去重说明),所以 count 增长
+   * 换来的是**纵深覆盖**与命中机会,不是单体倍率 —— 配表口径因此是群伤:
+   *
+   *        常态群伤(典型命中 4 个)= 4 × 40 ÷ 1.60 = 100
+   *
+   * 正好落在「8 级 100–120」基准的沿上。误按「吃满 3 道」口径核这张表,
+   * 会得出单体 75、以为配弱了 —— 没弱,那 3 道是给三只不同位置的怪的。
+   *
+   * ## 瞄准:与寂灭指同一条「面向即弹道」的线
+   *
+   * aim = facing:落点方向由玩家面向决定,想打哪边就把脸转过去。
+   * 与寂灭指的分工:指是「一条穿透线」,锥是「一串炸点」,后者吃站桩怪、
+   * 前者吃直线怪 —— 同为走位系,空间判读完全不同。
+   */
+  huangquan: {
+    id: 'huangquan', name: '黄泉升窍诀',
+    desc: '面前依次落下的冰锥,落地成圈炸开。第 3 级两道、第 5 级三道并附带冰缓。',
+    // ⚠️ `texture` 在 drop 形态上没有消费者 —— 冰锥是 Container + Graphics 现场画的,
+    //    `proj_ice_spike` 是死键,别为它做图(与 proj_sand / proj_bolt 同一性质)
+    form: 'drop', aim: 'facing', texture: 'proj_ice_spike', color: 0x59d9a0,
+    keyRelic: 'zunhunfan',
+    levels: [
+      // ⚠️ 冷却 2.00 → 1.60 线性压档;爆炸半径 1.2 → 1.4 随级递进。
+      //    道数节点与全表对齐:机制放 3 / 5 级(2 道 / 3 道 + 冰缓),8 级只抬数值。
+      { damage: 16, cooldown: 2.00, count: 1, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.2, dropGapGrid: 1.6, impactDelayMs: 400 },
+      { damage: 20, cooldown: 1.95, count: 1, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.2, dropGapGrid: 1.6, impactDelayMs: 400 },
+      { damage: 22, cooldown: 1.90, count: 2, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.25, dropGapGrid: 1.6, impactDelayMs: 400, note: '冰锥增至 2 道' },
+      { damage: 26, cooldown: 1.85, count: 2, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.25, dropGapGrid: 1.6, impactDelayMs: 400 },
+      { damage: 28, cooldown: 1.80, count: 3, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.3, dropGapGrid: 1.6, impactDelayMs: 400,
+        slowMul: 0.20, slowMs: 1500, note: '冰锥增至 3 道,命中附带冰缓' },
+      { damage: 32, cooldown: 1.75, count: 3, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.35, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
+      { damage: 36, cooldown: 1.70, count: 3, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.35, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
+      { damage: 40, cooldown: 1.60, count: 3, pierce: 0, area: 1, speed: 0,
+        dropRadiusGrid: 1.4, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
+    ],
+  },
+
+  /**
+   * 道化黄泉 —— 黄泉升窍诀 8 级 + 尊魂幡 5 级。
+   *
+   * 一串炸点**连成一片**:面前涌出一阵 3 格宽 × 5.5 格长的黄泉水浪,
+   * 浪前 0.30s 推到最远端,被压过的敌人各结算**一次**;浪过之处留下
+   * 存续 1.5s 的水洼,不伤、只把里面的敌人泡慢(30% · 2s)。
+   *
+   * ## 配表口径:进化的强度全在「面」上
+   *
+   * 基础形态群口径 100(4 × 40 ÷ 1.60),进化后:
+   *
+   *        常态群伤 = 7 × 55 ÷ 1.60 ≈ 240
+   *
+   * ≈ ×2.4,与全局「进化约 ×2.2」基准同档。单体不变(单怪只结算 1 次),
+   * 55 × 1 ÷ 1.60 ≈ 34 —— 这是刻意的:这条线的基因是纵深覆盖 + 拖慢,
+   * 不是点杀。进化保留减速基因(20% → 30%),水洼与寂灭指的减速同源、
+   * 不与定身术的硬控抢生态。
+   *
+   * ## 与火海的分野
+   *
+   * 同为「地上留一片」,火海**只伤**、可叠层、30 残留伤害区;水洼**只控**、
+   * 不叠层、1.5s 就干 —— 伤害区生态留给火海,水洼只负责把残敌按在浪里。
+   */
+  daohua: {
+    id: 'daohua', name: '道化黄泉',
+    desc: '面前涌出一片长方水浪,单怪只结算一次;浪过的水洼把残敌泡慢。',
+    // ⚠️ 同上:wave 形态由 Container + Graphics 现画,`proj_huangquan` 是死键
+    form: 'wave', aim: 'facing', texture: 'proj_huangquan', color: 0x39b98a,
+    levels: [
+      {
+        damage: 55, cooldown: 1.60, count: 1, pierce: 0, area: 1, speed: 0,
+        rectWidthGrid: 3, rectLengthGrid: 5.5,
+        waveFrontMs: 300, waveLingerMs: 1500,
+        slowMul: 0.30, slowMs: 2000,
+      },
+    ],
+  },
 };
 
 /**
@@ -820,11 +944,21 @@ export function resolveSpell(id: string, level: number): ResolvedSpell | null {
     shockAmp: r.shockAmp ?? 0,
     skyThunderMs: r.skyThunderMs ?? 0,
     skyThunderDamage: r.skyThunderDamage ?? 0,
+
+    dropRadius: (r.dropRadiusGrid ?? 0) * g,
+    dropGap: (r.dropGapGrid ?? 0) * g,
+    impactDelayMs: r.impactDelayMs ?? 0,
+
+    rectWidth: (r.rectWidthGrid ?? 0) * g,
+    rectLength: (r.rectLengthGrid ?? 0) * g,
+    waveFrontMs: r.waveFrontMs ?? 0,
+    waveLingerMs: r.waveLingerMs ?? 0,
+
     armorPen: r.armorPen ?? 0,
   };
 }
 
-/** 六门基础法术(不含六个进化形态) */
+/** 七门基础法术(不含七个进化形态) */
 export const BASE_SPELL_IDS = Object.keys(SPELLS).filter((id) => !EVOLVED_IDS.has(id));
 
 /**

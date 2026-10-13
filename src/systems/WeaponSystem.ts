@@ -6,6 +6,8 @@ import { Orbiter } from '../entities/attacks/Orbiter';
 import { Zone } from '../entities/attacks/Zone';
 import { SandWave } from '../entities/attacks/SandWave';
 import { Tornado } from '../entities/attacks/Tornado';
+import { IceSpikeDrop } from '../entities/attacks/IceSpikeDrop';
+import { UnderworldWave } from '../entities/attacks/UnderworldWave';
 import { ChainBolt } from '../entities/attacks/ChainBolt';
 import { Barrier } from '../entities/attacks/Barrier';
 import { resolveSpell, MAX_SPELL_LEVEL, SPELLS } from '../config/SpellConfig';
@@ -37,6 +39,8 @@ export interface WeaponPools {
   tornadoPool: Phaser.GameObjects.Group;
   chainBolts: Phaser.GameObjects.Group;
   barriers: Phaser.GameObjects.Group;
+  iceSpikes: Phaser.GameObjects.Group;
+  waves: Phaser.GameObjects.Group;
 }
 
 /**
@@ -72,6 +76,10 @@ export class WeaponSystem {
   private static readonly PULL_SECONDS = 0.25;
   /** 火海叠层判定:落点在这个距离内的火海视为同一片 */
   private static readonly SEA_MERGE_PX = 48;
+  /** 落锥首道的落点距离(px)= 2 格 —— 护得住身位,又不至于贴脸糊屏 */
+  private static readonly FIRST_DROP_PX = 2 * 64;
+  /** 相邻两道冰锥的落地间隔。「一串接力砸下」的节奏感来自这里,不来自伤害差 */
+  private static readonly DROP_STAGGER_MS = 200;
 
   private scene: Phaser.Scene;
   private player: Player;
@@ -235,6 +243,8 @@ export class WeaponSystem {
       case 'chain': this.fireChain(sp, mods); break;
       case 'projectile': this.fireProjectile(sp, mods); break;
       case 'zone': this.fireZone(sp, mods); break;
+      case 'drop': this.fireDrop(sp, mods); break;
+      case 'wave': this.fireWave(sp, mods); break;
     }
     // 斩罗:剑阵的进化形态每 4 秒收束一次。它有自己的节奏,不跟冷却走 ——
     // 把 4 秒塞进冷却会让剑阵在前 4 秒完全不转,那是明显的退化。
@@ -564,6 +574,50 @@ export class WeaponSystem {
     zone.setup(
       t.x, t.y, this.damageOf(sp, mods), sp.coneRadius, sp.lifeMs, sp.damage,
       sp.color, 1,
+    );
+  }
+
+  /**
+   * 落锥:面前依次落下的冰锥(黄泉升窍诀)。
+   *
+   * 首道落点固定在面向 2 格处,后续每道 +dropGap(由表给出),
+   * 道与道错开 DROP_STAGGER_MS —— 面向在**施放瞬间**锁定,玩家转脸
+   * 不影响这一轮;这也是它与自动索敌形态的空间判读差异所在。
+   */
+  private fireDrop(sp: ResolvedSpell, mods: SpellRelicMods): void {
+    const facing = Math.atan2(this.player.facingY, this.player.facingX);
+    const drop = this.pools.iceSpikes.get() as IceSpikeDrop;
+    if (!drop) return;
+    drop.setup(
+      this.player.x, this.player.y, facing,
+      Math.max(1, sp.count),
+      this.damageOf(sp, mods),
+      sp.dropRadius, sp.dropGap,
+      WeaponSystem.FIRST_DROP_PX,
+      sp.impactDelayMs,
+      WeaponSystem.DROP_STAGGER_MS,
+      sp.color,
+      this.statusOf(sp, mods),
+    );
+  }
+
+  /**
+   * 浪扫:面前长方形水浪(道化黄泉)。
+   *
+   * 伤害与形状全部交给 UnderworldWave —— 前沿推进期结算(单怪一次),
+   * 残留期只刷减速。这里只负责把表的矩形尺寸与两段时长原样递过去。
+   */
+  private fireWave(sp: ResolvedSpell, mods: SpellRelicMods): void {
+    const facing = Math.atan2(this.player.facingY, this.player.facingX);
+    const wave = this.pools.waves.get() as UnderworldWave;
+    if (!wave) return;
+    wave.setup(
+      this.player.x, this.player.y, facing,
+      this.damageOf(sp, mods),
+      sp.rectLength, sp.rectWidth,
+      sp.waveFrontMs, sp.waveLingerMs,
+      sp.color,
+      this.statusOf(sp, mods),
     );
   }
 

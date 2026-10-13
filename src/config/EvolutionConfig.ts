@@ -53,6 +53,11 @@ export const EVOLUTIONS: EvolutionDef[] = [
     keyRelic: 'xiandi_huazhou',
     reason: '一道弧分成八道黑龙铺满全周,正前方多一道主龙 —— 不挑方向的全场清扫。',
   },
+  {
+    base: 'huangquan', evolved: 'daohua', evolvedName: '道化黄泉',
+    keyRelic: 'zunhunfan',
+    reason: '一串炸点连成一片长方水浪,单怪只结算一次但群伤翻倍;浪过的水洼把残敌泡慢。',
+  },
 ];
 
 export function findEvolution(baseId: string): EvolutionDef | undefined {

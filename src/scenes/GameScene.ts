@@ -12,6 +12,8 @@ import { SandWave } from '../entities/attacks/SandWave';
 import { Tornado } from '../entities/attacks/Tornado';
 import { ChainBolt } from '../entities/attacks/ChainBolt';
 import { Barrier } from '../entities/attacks/Barrier';
+import { IceSpikeDrop } from '../entities/attacks/IceSpikeDrop';
+import { UnderworldWave } from '../entities/attacks/UnderworldWave';
 import { FireVent } from '../entities/Hazards/FireVent';
 import { FingerOfFate } from '../entities/Hazards/FingerOfFate';
 import { MeteorFall } from '../entities/Hazards/MeteorFall';
@@ -76,6 +78,8 @@ export class GameScene extends Phaser.Scene {
   public tornadoPool!: Phaser.GameObjects.Group;
   public chainBoltPool!: Phaser.GameObjects.Group;
   public barrierPool!: Phaser.GameObjects.Group;
+  public iceSpikePool!: Phaser.GameObjects.Group;
+  public wavePool!: Phaser.GameObjects.Group;
   public fireVentPool!: Phaser.GameObjects.Group;
   public fingerPool!: Phaser.GameObjects.Group;
   public meteorPool!: Phaser.GameObjects.Group;
@@ -284,6 +288,11 @@ export class GameScene extends Phaser.Scene {
     this.tornadoPool = this.add.group({ runChildUpdate: false, classType: Tornado, maxSize: 12 });
     this.chainBoltPool = this.add.group({ runChildUpdate: false, classType: ChainBolt, maxSize: 10 });
     this.barrierPool = this.add.group({ runChildUpdate: false, classType: Barrier, maxSize: 3 });
+    // 黄泉升窍诀:一次施放最多 3 道、从预警到炸净约 1.0s,冷却最快 1.6s
+    // —— 同一时刻最多 1 次施放在场,4 个是余量
+    this.iceSpikePool = this.add.group({ runChildUpdate: false, classType: IceSpikeDrop, maxSize: 4 });
+    // 道化黄泉:浪前 0.30s + 水洼 1.5s = 1.8s 一阵,冷却 1.6s —— 理论峰值 2 阵叠场,4 是余量
+    this.wavePool = this.add.group({ runChildUpdate: false, classType: UnderworldWave, maxSize: 4 });
     // 火柱:预警 1.2s + 喷发 1.6s = 2.8s 一根,8 秒喷 2 根 —— 6 个足够
     this.fireVentPool = this.add.group({ runChildUpdate: false, classType: FireVent, maxSize: 6 });
     // 命数指:单根寿命约 2.3s(1.6 预警 + 0.26 指落 + 0.42 收尾),
@@ -380,6 +389,18 @@ export class GameScene extends Phaser.Scene {
       w.bind(this.enemyPool, apply);
       this.barrierPool.add(w);
     }
+    for (let i = 0; i < 4; i++) {
+      const s = new IceSpikeDrop(this);
+      s.setActive(false).setVisible(false);
+      s.bind(this.enemyPool, apply);
+      this.iceSpikePool.add(s);
+    }
+    for (let i = 0; i < 4; i++) {
+      const w = new UnderworldWave(this);
+      w.setActive(false).setVisible(false);
+      w.bind(this.enemyPool, apply);
+      this.wavePool.add(w);
+    }
     for (let i = 0; i < 6; i++) {
       const v = new FireVent(this);
       v.setActive(false).setVisible(false);
@@ -456,6 +477,8 @@ export class GameScene extends Phaser.Scene {
       tornadoPool: this.tornadoPool,
       chainBolts: this.chainBoltPool,
       barriers: this.barrierPool,
+      iceSpikes: this.iceSpikePool,
+      waves: this.wavePool,
     });
     // 开局自带火球术 —— 设计书第一节:主角王林的起始法术
     this.weaponSystem.addSpell(STARTING_SPELL);
@@ -1164,7 +1187,7 @@ export class GameScene extends Phaser.Scene {
    * 抽的是**类别**(新法术 / 法术升级 / 新遗物 / 遗物叠层 / 消耗品),
    * 按设计书 3.3 的权重抽一个还有货的类别,再从那一类里随机取具体条目。
    * 抽类别而不是抽条目,是为了让「还没学新法术的玩家」总能拿到法术卡 ——
-   * 逐条抽的话,六门法术里已学会五门时,新法术只剩 1/6 概率露面。
+   * 逐条抽的话,七门法术里已学会五门时,新法术只剩 2/7 概率露面。
    *
    * 保底:还有空槽时,三张卡里至少一张是「未拥有项」。
    */
@@ -2117,19 +2140,19 @@ export class GameScene extends Phaser.Scene {
   /**
    * 调试用:把法位抬到「装得下全部基础法术」。
    *
-   * ⚠️ **不能写 `setSlotCap(MAX_SPELL_SLOTS)`**。收槽到 5 之后,6 门法术在
-   *    5 格里必然有一门发不出去,而按 `BASE_SPELL_IDS` 的顺序,发不出去的
-   *    恰好是**最后一门**(龙卷)。后果是「装满神通」只给 5 门却不报错,
-   *    「凑齐融合」里 longjuan → hufeng 那条链**永远凑不齐** ——
+   * ⚠️ **不能写 `setSlotCap(MAX_SPELL_SLOTS)`**。收槽到 5 之后,7 门法术在
+   *    5 格里必然有两门发不出去,而按 `BASE_SPELL_IDS` 的顺序,发不出去的
+   *    恰好是**最后两门**(龙卷、黄泉)。后果是「装满神通」只给 5 门却不报错,
+   *    「凑齐融合」里 longjuan → hufeng、huangquan → daohua 两条链**永远凑不齐** ——
    *    而调试面板点不通的内容,和坏掉的内容在表现上一模一样。
-   *    所以上限按**法术门数**取,加第 7 门法术时这里自动跟上。
+   * 所以上限按**法术门数**取,加第 8 门法术时这里自动跟上。
    */
   private debugUncapSlots(): void {
     this.weaponSystem.setSlotCap(Math.max(MAX_SPELL_SLOTS, BASE_SPELL_IDS.length));
   }
 
   /**
-   * 把六门**基础**法术一次装满(进化形态走「凑齐融合」,不在这里发)。
+   * 把七门**基础**法术一次装满(进化形态走「凑齐融合」,不在这里发)。
    *
    * 同样先把法位开到上限:「装满」这个名字承诺的就是装满,
    * 而开局只有 2 格 —— 不抬上限的话这个按钮会静默地只给两门。
@@ -2144,7 +2167,7 @@ export class GameScene extends Phaser.Scene {
     this.refreshHudAfterDebug();
     return names.length
       ? `参悟 ${names.join(' · ')}(法位已开到 ${this.weaponSystem.getSlotCap()})`
-      : '六门基础法术都已持有';
+      : '七门基础法术都已持有';
   }
 
   /** 把手上每一门神通都拉到满级 —— 一键验证「8 级手感」 */
@@ -2171,8 +2194,8 @@ export class GameScene extends Phaser.Scene {
    * 条件从 EVOLUTIONS 表读,不手写 id 数组 —— 否则加一条链就会忘了改这里。
    */
   public debugFullEvolution(): string {
-    // 法位阶梯(凝气只有 2 格)会把「六门一起凑」卡住 —— 这个按钮的用途是
-    // **一次看完全部六条进化链**,所以先把法位开到上限再补法术。
+    // 法位阶梯(凝气只有 2 格)会把「七门一起凑」卡住 —— 这个按钮的用途是
+    // **一次看完全部七条进化链**,所以先把法位开到上限再补法术。
     // 想验「法位不够时卡池怎么变」请用「开一格法位」,不要靠这里。
     this.debugUncapSlots();
     for (const def of EVOLUTIONS) {
