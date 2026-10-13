@@ -704,7 +704,10 @@ function generateProjectiles(scene: Phaser.Scene): void {
     g.fillRect(19, mid - 1, 3, 2);
   });
 
-  // 凌天侯的剑气 —— 与「斩罗决」同源的一道青白剑芒,但更宽更长
+  // 凌天侯的剑气 —— **兜底版**。正式版是美术精修的 src/assets/proj_boss_sword.png
+  // (96×14,由 `make-sprite.mjs --aspect free` 从 sword_qi_crop.png 出图,见规格 §3);
+  // AssetLoader 先载 PNG,纹理已存在时本函数直接早退。只有 PNG 丢失才会走到这里,
+  // 退化成小一号的代码画版 —— 判定不受影响(Boss 弹体一律 4px 碰撞圆,与外观无关)。
   makeTexture(scene, 'proj_boss_sword', 34, 14, (g) => {
     const mid = 7;
     for (let i = 0; i < 3; i++) {

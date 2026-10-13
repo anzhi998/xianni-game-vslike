@@ -546,23 +546,27 @@ export const BOSSES: Record<string, BossDef> = {
     phases: [
       {
         // 一阶:刚亮剑。剑域很小(140px),只够逼玩家别贴脸站着;弟子两人一轮
+        // 剑气扇 2400 → 1680ms(×0.7,2026-10-13 调速):一阶就要读得出「他出手比别家快」
         name: '剑域·初开', hpAbove: 0.6, speed: 70, tempo: 1,
-        fan: { count: 4, spread: 1.2, damage: 21, speed: 260, intervalMs: 2400, ...LINGTIANHOU_SWORD },
+        fan: { count: 4, spread: 1.2, damage: 21, speed: 260, intervalMs: 1680, ...LINGTIANHOU_SWORD },
         domain: { radius: 140, dps: 24, tickMs: 500 },
         summon: { count: 2, type: 'sword_disciple', maxAlive: 6, intervalMs: 6000 },
       },
       {
         // 二阶:剑域扩张到 210px,「近身输出」的代价开始明显
+        // 剑气扇 2000 → 1400ms(×0.7)
         name: '剑域·合围', hpAbove: 0.28, speed: 78, tempo: 1,
-        fan: { count: 6, spread: 1.4, damage: 24, speed: 280, intervalMs: 2000, ...LINGTIANHOU_SWORD },
+        fan: { count: 6, spread: 1.4, damage: 24, speed: 280, intervalMs: 1400, ...LINGTIANHOU_SWORD },
         domain: { radius: 210, dps: 33, tickMs: 500 },
         summon: { count: 3, type: 'sword_disciple', maxAlive: 10, intervalMs: 5200 },
       },
       {
         // 三阶:剑域全开 300px,弟子三人一轮 —— 域内几乎没有安全输出位,
         // 玩家被迫在「掉血换输出」与「退出去但打不动」之间反复权衡
+        // 剑气扇 1700 → 1190ms(×0.7;终阶 tempo 1.15,实际 1.04s/轮 ——
+        // 与朱雀狂暴阶段 1.03s 并列全场最快,坐实「低伤高频率」)
         name: '剑域·万物皆斩', hpAbove: 0, speed: 92, tempo: 1.15,
-        fan: { count: 8, spread: 1.6, damage: 27, speed: 300, intervalMs: 1700, ...LINGTIANHOU_SWORD },
+        fan: { count: 8, spread: 1.6, damage: 27, speed: 300, intervalMs: 1190, ...LINGTIANHOU_SWORD },
         domain: { radius: 300, dps: 45, tickMs: 480 },
         summon: { count: 3, type: 'sword_disciple', maxAlive: 12, intervalMs: 4600 },
       },
