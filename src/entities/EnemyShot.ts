@@ -1,16 +1,14 @@
 import Phaser from 'phaser';
 
-/** 弹体碰撞圆半径(像素)。**外观不影响它** —— 见 setup 的注释 */
-const HIT_RADIUS = 4;
+/**
+ * 弹体碰撞圆的**默认**半径(像素)。4px ≈ 术修圆弹贴图的一半。
+ *
+ * 绝大多数弹体不该越过它 —— 为什么,以及唯一的例外,见 `ShotStyle.hitRadius`。
+ */
+const DEFAULT_HIT_RADIUS = 4;
 
 /**
  * 一次发射的外观参数。全部可选 —— 不传就是普通术修的暗红圆弹。
- *
- * ⚠️ 这里**没有碰撞半径**。首领的火羽画到 30px,碰撞圆仍然是 4px,
- *    与它取代的圆弹一字不差。原因不是偷懒,是**公正**:判定跟着贴图放大的话,
- *    同一道羽幕在「看起来擦过去」的地方会真的打中你,而玩家没有任何线索
- *    说明这片羽为什么有更大的判定 —— 视觉与判定不符是本项目最不能接受的一类错。
- *    想让火羽更难躲,改的是片数(count),不是让它「变大」。
  */
 export interface ShotStyle {
   /** 纹理键。缺省 'proj_enemy_shot' */
@@ -21,6 +19,26 @@ export interface ShotStyle {
   spin?: number;
   /** 是否留拖尾 */
   trail?: boolean;
+  /**
+   * 碰撞圆半径的**覆盖值**(像素)。缺省 4,与普通术修圆弹一字不差。
+   *
+   * ⚠️ 这是一个刻意留出的**例外口**,全场只有一张弹体配得上:凌天侯的剑气。
+   *    理由不是「首领就该更强」,而是**形状**。剑气是一片 96×14 的长条实体,
+   *    一条独立飞行的剑身。玩家看它读到的信息是「这条线是危险的」——
+   *    而一条线的判定不该缩成中心一颗直径 8px 的珠子:剑身明明从身侧划过
+   *    却安然无事,玩家只会判定「这游戏的碰撞坏了」。把 r 提到 8,圆直径 16
+   *    刚好盖住贴图的整条宽度(14px),剑身扫过的位置就是会中招的位置。
+   *
+   * ⚠️ 反过来,**密集成幕**的弹体(朱雀火羽、天运子命数指)绝不能用它。
+   *    单片羽的判定在「幕」里没有任何可读线索 —— 玩家数不清十片羽各自的边缘,
+   *    放大只会变成「莫名其妙被打中」。想让羽幕更难躲,改的是片数 count。
+   *
+   * ⚠️ 硬上限:r 不得大到让圆在**垂直于飞行方向**上明显超出贴图高度。
+   *    Arcade body 不随 rotation 旋转,圆形是唯一在旋转下不变形的选择 ——
+   *    换成贴合剑身的矩形/胶囊,剑羽一斜 AABB 就膨胀成外接方框,判定比贴图
+   *    大出好几倍。所以这里能调的只有半径,做不出「沿剑身的长条判定」。
+   */
+  hitRadius?: number;
 }
 
 /**
@@ -103,11 +121,12 @@ export class EnemyShot extends Phaser.Physics.Arcade.Sprite {
 
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.enable = true;
-    const r = HIT_RADIUS;
+    const r = style?.hitRadius ?? DEFAULT_HIT_RADIUS;
     body.setCircle(r, 0, 0);
     // setCircle 的偏移相对 body 顶点,补半个贴图尺寸让碰撞圆落在精灵中心。
-    // ⚠️ 用 frame.realWidth 而不是写死的 5 —— 火羽是 30px 宽,写死会让碰撞圆
-    //    偏到羽根那一侧,玩家看着羽尖擦过去却被判中
+    // ⚠️ 用 frame.realWidth 而不是写死的 5 —— 火羽是 30px 宽、剑气是 96px,
+    //    写死会让碰撞圆偏到贴图的一侧,玩家看着贴图边缘过去却被判中。
+    //    偏移用 r 反推,所以覆盖半径变化时圆心自动留在中心(offset 允许为负)。
     body.setOffset(this.frame.realWidth / 2 - r, this.frame.realHeight / 2 - r);
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
   }

@@ -419,6 +419,9 @@ export class BossSystem {
       color: def.color ?? fallback,
       spin: def.spin ?? 0,
       trail: def.trail ?? false,
+      // 不写 `?? 4` —— 缺省值留在实体层(EnemyShot.DEFAULT_HIT_RADIUS)。
+      // 配置层没给就等于「不覆盖」,这样默认半径只有一个出处,改一处全局生效。
+      hitRadius: def.hitRadius,
     };
   }
 

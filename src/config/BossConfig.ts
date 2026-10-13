@@ -47,6 +47,15 @@ export interface BossShotStyle {
   spin?: number;
   /** 拖尾。羽毛越密越该开 —— 密集弹幕里拖尾是分辨「哪片往哪飞」的主要线索 */
   trail?: boolean;
+  /**
+   * 碰撞圆半径的覆盖值(像素)。缺省 4 —— 与普通术修圆弹一字不差。
+   *
+   * ⚠️ 全场只有凌天侯的剑气配它,理由不是「首领该更强」,而是剑气是**单体长条**:
+   *    一条独立飞行的剑身,玩家预期「剑身扫过的那条线会中招」。完整论证
+   *    (含为什么不能做成矩形/胶囊、为什么密集成幕的弹体禁用)见
+   *    `EnemyShot.ts` 的 `ShotStyle.hitRadius`。
+   */
+  hitRadius?: number;
 }
 
 export interface BossFanDef extends BossShotStyle {
@@ -297,6 +306,11 @@ const LINGTIANHOU_SWORD: BossShotStyle = {
   color: 0x9db4d0,
   spin: 0,
   trail: false,
+  // 判定圆 4 → 8:直径 16 刚好盖住剑羽贴图的整条宽度(96×14)。
+  // 剑气是长条单体,判定缩成中心一颗小珠时「剑身擦身而过却无事」很出戏;
+  // 这一档只补横向覆盖,垂直方向不越过可见边,守住了「视觉=判定」的底线。
+  // 想更狠可以上调到 11(垂直每侧多出约 3.5px),再不克制就变成凭空挨打。
+  hitRadius: 8,
 };
 
 /** 天运子命数指的落点圈颜色 —— 与它的签文同源的金,但更沉 */
