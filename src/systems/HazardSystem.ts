@@ -57,12 +57,6 @@ export class HazardSystem {
     return this.def?.name ?? '无';
   }
 
-  /** 手动喷发一次。调试面板用 —— 与定时器共用同一条路径 */
-  forceBurst(): number {
-    if (!this.def) return 0;
-    return this.burst();
-  }
-
   update(seconds: number): void {
     if (!this.def) return;
     if (seconds < this.nextAtSec) return;

@@ -62,10 +62,16 @@ export interface MajorRealmDef {
   spellSlots: number;
   /** 突破进入本境界后,法位相比上一境增加多少(仅用于突破横幅文案) */
   slotGain: number;
-  /** 突破时一次性施加,乘算到 Player 上 */
+  /**
+   * 突破时一次性施加,乘算到 Player 上。
+   *
+   * hpMul 按 +0.05 等差递进(1.10 → 1.35),全程累计约 ×3.3。
+   * 曾经的 1.15/1.35/1.6/1.9/2.2/2.6 累计约 ×27,突破一次血量跳一大截,
+   * 后期怪的伤害完全追不上血池 —— 血量不能成为境界的主要收益,
+   * 境界的主收益是法位与伤害。
+   */
   hpMul: number;
   damageMul: number;
-  moveSpeedMul: number;
   color: number;
 }
 
@@ -94,28 +100,28 @@ export const REALMS: MajorRealmDef[] = [
     id: 'ningqi', name: '凝气期', shortName: '凝气',
     minorSpan: 15, minorNames: NQ_LAYERS,
     spellSlots: 2, slotGain: 0,
-    hpMul: 1.0, damageMul: 1.0, moveSpeedMul: 1.0,
+    hpMul: 1.0, damageMul: 1.0,
     color: 0x9acccc,
   },
   {
     id: 'zhuji', name: '筑基期', shortName: '筑基',
     minorSpan: 5, minorNames: stages(5),
     spellSlots: 3, slotGain: 1,
-    hpMul: 1.15, damageMul: 1.1, moveSpeedMul: 1.05,
+    hpMul: 1.1, damageMul: 1.1,
     color: 0x66aaff,
   },
   {
     id: 'jiedan', name: '结丹期', shortName: '结丹',
     minorSpan: 5, minorNames: stages(5),
     spellSlots: 4, slotGain: 1,
-    hpMul: 1.35, damageMul: 1.25, moveSpeedMul: 1.1,
+    hpMul: 1.15, damageMul: 1.25,
     color: 0xffcc55,
   },
   {
     id: 'yuanying', name: '元婴期', shortName: '元婴',
     minorSpan: 5, minorNames: stages(5),
     spellSlots: 5, slotGain: 1,
-    hpMul: 1.6, damageMul: 1.45, moveSpeedMul: 1.15,
+    hpMul: 1.2, damageMul: 1.45,
     color: 0xff88dd,
   },
   {
@@ -123,21 +129,21 @@ export const REALMS: MajorRealmDef[] = [
     minorSpan: 5, minorNames: stages(5),
     // ⚠️ 收槽:化神不再 +1(见 MajorRealmDef.spellSlots 的「为什么收槽」)
     spellSlots: 5, slotGain: 0,
-    hpMul: 1.9, damageMul: 1.7, moveSpeedMul: 1.2,
+    hpMul: 1.25, damageMul: 1.7,
     color: 0xff5577,
   },
   {
     id: 'yingbian', name: '婴变期', shortName: '婴变',
     minorSpan: 5, minorNames: stages(5),
     spellSlots: 5, slotGain: 0,
-    hpMul: 2.2, damageMul: 1.95, moveSpeedMul: 1.22,
+    hpMul: 1.3, damageMul: 1.95,
     color: 0xbb88ff,
   },
   {
     id: 'wending', name: '问鼎期', shortName: '问鼎',
     minorSpan: 5, minorNames: stages(5),
     spellSlots: 5, slotGain: 0,
-    hpMul: 2.6, damageMul: 2.3, moveSpeedMul: 1.25,
+    hpMul: 1.35, damageMul: 2.3,
     color: 0xffdd44,
   },
 ];

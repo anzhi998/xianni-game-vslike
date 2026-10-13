@@ -30,8 +30,6 @@ export class RealmSystem {
 
   /** 累计的境界血量倍率。GameScene 用它和遗物倍率一起算出最大生命 */
   public hpMul = 1;
-  /** 累计的境界移速倍率,同上 */
-  public speedMul = 1;
 
   private scene: Phaser.Scene;
   private player: Player;
@@ -101,7 +99,6 @@ export class RealmSystem {
     // 「基础 × 境界倍率 × 遗物倍率」的纯函数,由 GameScene.syncPlayerStats 算。
     // 直接乘进 player 会让遗物那份乘算在每次重新计算时被算两遍。
     this.hpMul *= r.hpMul;
-    this.speedMul *= r.moveSpeedMul;
     this.player.damageMul *= r.damageMul;
     // 法位随大境界成长 —— 突破到筑基/结丹/元婴各开一格(化神起封顶 5),
     // 这是「越早突破越赚」这条压力线在数值上的唯一落点
