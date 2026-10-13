@@ -54,6 +54,18 @@ export class DamageMeter {
     this.grand += amount;
   }
 
+  /**
+   * 清账。**每局开局必须调一次**(GameScene.create 里)。
+   *
+   * 桶只在 record() 里按「跨了几秒」滚动清零,snapshot() 根本不看时钟 ——
+   * 所以不清的话,上一局的窗口和、全程累计、占比分母会原样带到新一局:
+   * 开局 DPS 面板继续显示上一局的读数,而且 `share` 的分母是上一局的 `grand`。
+   */
+  reset(): void {
+    this.per.clear();
+    this.grand = 0;
+  }
+
   /** 按全程累计降序。窗口和只随 record 变化 —— 游戏暂停时读数自然冻结 */
   snapshot(): MeterRow[] {
     const rows: MeterRow[] = [];

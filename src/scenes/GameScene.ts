@@ -171,6 +171,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    // 场景 stop→start 复用**同一个 GameScene 实例**,实例字段不会自己回初值,
+    // 所以每次 create 都得把跨局状态显式清一遍(见下面两组注释)。
     this.isPaused = false;
     this.elapsed = 0;
     this.kills = 0;
@@ -178,6 +180,24 @@ export class GameScene extends Phaser.Scene {
     this.xpCarry = 0;
     this.insightHealthRegen = 0;
     this.deathHandled = false;
+
+    // ⚠️ **懒创建的句柄也要归零**,不只是上面这些标量。
+    //    场景是单例(key 缓存),stop→start 复用同一个实例,字段不会回初值;
+    //    而 shutdown 时 Phaser 已经把这些显示对象销毁了 —— 字段留着就成了
+    //    「已销毁对象的僵尸引用」。下面两处的创建判据都是 `if (!xxx)`,
+    //    僵尸是 truthy、判不出来,于是从第 2 局起**永久不再重建**:
+    //      - bossDomain:首领脚下的剑阵/法域图层 → 首领的场所圈凭空消失
+    //      - bossSigils:杀戮仙诀的四方符印     → 符印整圈不出现
+    //    UIScene 吃过同款亏,而且那次是**死机**:dpsBg 被销毁后 setSize 抛异常,
+    //    冒到 rAF 回调把整条渲染循环打断。两处一起收口。
+    this.bossDomain = undefined;
+    this.bossSigils = [];
+
+    // DPS 统计是**每局独立**的读数。DamageMeter 的秒桶只在「有新伤害且跨秒」
+    // 时才滚动清零(snapshot 不看时钟),不清账的话新一局开局会继续显示上一局的
+    // 数字,而且 share 会拿上一局的全程总伤当分母。也会让 UIScene 的
+    // refreshDpsPanel 在开局第一拍就以为「已经有伤害了」。
+    this.damageMeter.reset();
 
     this.cameras.main.setBackgroundColor('#1a0f0c');
     this.physics.world.setBounds(0, 0, this.map.worldWidth, this.map.worldHeight);
@@ -764,6 +784,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     // 定身术:命中时按概率定住。定住的是**动作**,不只是移动
+    //
+    // ⚠️ 首领的 `resistFreeze` 恒为 true(见 Enemy.setup),所以这一整块对 Boss
+    //    直接跳过 —— 定身术对首领完全无效,连走位都停不住。
+    //    锁链特效也就不会在首领身上出现:「没有链条」是这一刻唯一的反馈,
+    //    别把它当成 bug 去修(要加反馈的话得换一个词,不能复用免伤窗口的「免疫」)。
     if (mods.freezeChance > 0 && Math.random() < mods.freezeChance && !enemy.resistFreeze) {
       const wasFrozen = enemy.frozenUntil > now;
       enemy.frozenUntil = Math.max(enemy.frozenUntil, now + mods.freezeMs);

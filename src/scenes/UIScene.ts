@@ -47,6 +47,37 @@ export class UIScene extends Phaser.Scene {
   }
 
   create(): void {
+    // ====== 跨局句柄清零(必须在建任何东西之前)======
+    //
+    // ⚠️ 这里是**实锤过的死机根因**,不是洁癖。
+    //
+    // Phaser 的场景是**按 key 缓存的单例**:`scene.stop('UIScene')` 之后再来一局
+    // `scene.launch('UIScene')`,复用**同一个实例**,实例字段不会自己回初值。
+    // 而 shutdown 会把这个场景的显示对象**全部销毁**。于是下面这几个**懒创建**
+    // 的句柄就变成了「已销毁对象的僵尸引用」——要命的是它们的创建判据都是
+    // `if (!xxx)`,而僵尸是 truthy,**判不出来**:
+    //
+    //   - dpsBg/dpsText/dpsPanel:`this.dpsBg!.setSize(...)` → 已销毁的 Rectangle
+    //     其 `geom` 被 `Shape.preDestroy` 置成了 null,于是抛
+    //     `TypeError: Cannot read properties of null (reading 'setSize')`。
+    //     Text 反而不炸 —— `Text.preDestroy` 不置空 canvas/context,所以
+    //     `dpsText.setText()` 能过,这就是为什么只炸了 setSize 那一行。
+    //   - relicTip:`this.relicTip.removeAll(true)` 打在死容器上。
+    //   - pauseOverlay:`if (this.pauseOverlay) return;` → 暂停菜单**再也弹不出来**
+    //     (而 GameScene 已经暂停了,玩家眼里同样是「卡死」)。
+    //
+    // 后果的严重性在于:这个异常是在 `Clock.update` 里抛的,一路冒到 rAF 回调,
+    // 而 Phaser 的 `TimeStep.step` **不捕获异常**、下一帧的 requestAnimationFrame
+    // 注册在 step 末尾 —— 整条渲染循环当场断掉,表现就是「点什么都没反应」。
+    //
+    // 所以每次 create 都必须把它们清回 undefined,让懒创建逻辑重新走一遍。
+    this.dpsPanel = undefined;
+    this.dpsBg = undefined;
+    this.dpsText = undefined;
+    this.relicTip = undefined;
+    this.relicTipTappedBySlot = undefined;
+    this.pauseOverlay = undefined;
+
     const w = GAME_WIDTH;
     const h = GAME_HEIGHT;
     this.cameras.main.setBackgroundColor('rgba(0,0,0,0)');
@@ -145,15 +176,29 @@ export class UIScene extends Phaser.Scene {
     });
 
     // ====== 监听 GameScene 事件 ======
+    //
+    // ⚠️ 每个监听都要**记账**,SHUTDOWN 时逐个 off。
+    //
+    // 理由和上面「句柄清零」是同一个根:GameScene.events 是两个场景共用的
+    // **同一个 emitter**(场景都是单例),而 Phaser 的 `Systems.shutdown()`
+    // **不清监听器**(只有 `destroy()` 才 `removeAllListeners()`)。以前这里
+    // 只 `.on()` 不 `.off()`:第一局 15 个、第二局 30 个、第三局 45 个……
+    // 后果不是崩溃而是**行为放大** —— `relic-equipped` 一响就新建一条横幅,
+    // 第二局会当场叠出两条;`upgrade-applied` / `game-pause` 同理。
     const game = this.scene.get('GameScene');
+    const gameSubs: Array<[string, (...args: any[]) => void]> = [];
+    const onGame = (evt: string, fn: (...args: any[]) => void): void => {
+      game?.events.on(evt, fn);
+      gameSubs.push([evt, fn]);
+    };
     if (game) {
-      game.events.on('player-damaged', () => this.updateHUD());
-      game.events.on('player-healed', () => this.updateHUD());
-      game.events.on('player-level-up', () => this.updateHUD());
-      game.events.on('xp-collected', () => this.updateHUD());
-      game.events.on('enemy-killed', () => this.updateHUD());
-      game.events.on('upgrade-applied', () => { this.updateHUD(); this.refreshSpells(); this.refreshRelics(); });
-      game.events.on('relic-equipped', (id: string, level: number) => {
+      onGame('player-damaged', () => this.updateHUD());
+      onGame('player-healed', () => this.updateHUD());
+      onGame('player-level-up', () => this.updateHUD());
+      onGame('xp-collected', () => this.updateHUD());
+      onGame('enemy-killed', () => this.updateHUD());
+      onGame('upgrade-applied', () => { this.updateHUD(); this.refreshSpells(); this.refreshRelics(); });
+      onGame('relic-equipped', (id: string, level: number) => {
         this.updateHUD();
         this.refreshRelics();
         const cfg = RELICS[id];
@@ -162,8 +207,8 @@ export class UIScene extends Phaser.Scene {
         const head = level > 1 ? `${cfg.name} 祭炼至 ${level} 级` : `获得遗物 ${cfg.name}`;
         this.showBanner(head, color, 2000, cfg.desc(level));
       });
-      game.events.on('coins-changed', () => this.updateHUD());
-      game.events.on('breakthrough', (realm: string) => {
+      onGame('coins-changed', () => this.updateHUD());
+      onGame('breakthrough', (realm: string) => {
         this.updateHUD();
         this.refreshSpells();
         // 突破最直接的一次收益是法位(筑基/结丹/元婴各开一格)——
@@ -177,21 +222,21 @@ export class UIScene extends Phaser.Scene {
         const sub = free > 0 ? `法位 ${cap} · 可参悟第 ${cap} 门法术` : '';
         this.showBanner(`突破至 ${realm}期!`, '#ffcc44', 2400, sub);
       });
-      game.events.on('boss-spawned', (id: string) => {
+      onGame('boss-spawned', (id: string) => {
         this.showBanner(`${BOSSES[id]?.name ?? id} 登场`, '#ff8844', 2400);
       });
-      game.events.on('boss-reborn', () => {
+      onGame('boss-reborn', () => {
         this.showBanner('浴火重生!', '#ff4422', 2000, '它的血量回到了满值');
       });
-      game.events.on('game-pause', () => this.onGamePause());
-      game.events.on('game-resume', () => this.onGameResume());
-      game.events.on('spell-evolved', (_id: string, name: string) => {
+      onGame('game-pause', () => this.onGamePause());
+      onGame('game-resume', () => this.onGameResume());
+      onGame('spell-evolved', (_id: string, name: string) => {
         this.updateHUD();
         this.refreshSpells();
         this.refreshRelics();
         this.showBanner(`道法融合 · ${name}`, '#ffdd66', 2800, '专属遗物已被吸收,腾出一个遗物槽');
       });
-      game.events.on('chest-obtained', (quality: string) => {
+      onGame('chest-obtained', (quality: string) => {
         const names: Record<string, string> = { wood: '木匣', jade: '玉盒', gold: '金匮' };
         this.showBanner(`获得洞府${names[quality] ?? '木匣'}`, '#ffdd66', 1600);
       });
@@ -204,6 +249,11 @@ export class UIScene extends Phaser.Scene {
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       if (this.pauseKeyHandler) window.removeEventListener('keydown', this.pauseKeyHandler);
+
+      // 摘掉挂在 GameScene.events 上的监听 —— 不摘就每局翻倍(见上面 onGame 的说明)。
+      // `gameSubs` 是本局 create 里挂上去的那批,只摘自己挂的,不碰别人的。
+      const gs = this.scene.get('GameScene');
+      for (const [evt, fn] of gameSubs) gs?.events.off(evt, fn);
     });
   }
 
@@ -222,6 +272,8 @@ export class UIScene extends Phaser.Scene {
       return;
     }
     if (!this.dpsPanel) {
+      // ⚠️ `this.dpsPanel` 可能指着**上一局**留下的已销毁对象(判据判不出僵尸),
+      //    所以 create() 开头必须先把这几个句柄清成 undefined —— 那里是死机根因。
       this.dpsBg = this.add.rectangle(0, 0, 10, 10, 0x000000, 0.45).setOrigin(1, 0);
       this.dpsText = this.add.text(-8, 6, '', {
         fontFamily: 'monospace', fontSize: '13px', color: '#aaffff', lineSpacing: 3,
@@ -623,6 +675,9 @@ export class UIScene extends Phaser.Scene {
   }
 
   private showPauseOverlay(): void {
+    // 这个 `if` 同时也是「跨局僵尸句柄」的受害者:若留给上一局的暂停浮层没清掉,
+    // 这里会直接 return,暂停菜单再也弹不出来(而 GameScene 已经真的暂停了)。
+    // 由 create() 开头的清零兜住。
     if (this.pauseOverlay) return;
     const w = GAME_WIDTH, h = GAME_HEIGHT;
     const c = this.add.container(0, 0);
