@@ -699,7 +699,11 @@ export class GameScene extends Phaser.Scene {
 
     // 定身术:命中时按概率定住。定住的是**动作**,不只是移动
     if (mods.freezeChance > 0 && Math.random() < mods.freezeChance && !enemy.resistFreeze) {
+      const wasFrozen = enemy.frozenUntil > now;
       enemy.frozenUntil = Math.max(enemy.frozenUntil, now + mods.freezeMs);
+      // 只有「新定住」才放锁链:连续命中只是续时长,链条仍按上一轮的节奏收紧,
+      // 否则会叠出一屏残影
+      if (!wasFrozen) this.spawnFreezeChainFx(enemy, mods.freezeMs);
     }
 
     const killed = enemy.takeDamage(dmg, now);
@@ -1674,6 +1678,48 @@ export class GameScene extends Phaser.Scene {
         });
       },
     });
+  }
+
+  /**
+   * 定身术触发:两条金色锁链呈 X 交叉锁住敌人,持续整个定身时长。
+   *
+   * 被定身的怪在 EnemyAiSystem 里整帧跳过(不能移动),所以链条钉在触发
+   * 位置上就始终「锁」在怪身上,不需要跟随。动画分三段:环从外侧滑入
+   * 收紧(140ms)→ 保持 → 末段 260ms 淡出。怪提前死亡时链条原地淡完,
+   * 与命数灰烬同为「放出去就不管」的一次性特效。
+   */
+  private spawnFreezeChainFx(enemy: Enemy, ms: number): void {
+    const x = enemy.x;
+    const y = enemy.y;
+    const span = Math.max(30, enemy.displayWidth * 1.15);
+    const linksPerChain = 5;
+    for (const chainAngle of [-Math.PI / 4, Math.PI / 4]) {
+      const ux = Math.cos(chainAngle);
+      const uy = Math.sin(chainAngle);
+      for (let i = 0; i < linksPerChain; i++) {
+        const t = (i / (linksPerChain - 1) - 0.5) * span;
+        const tx = x + ux * t;
+        const ty = y + uy * t;
+        const link = this.add.image(tx + ux * t * 0.5, ty + uy * t * 0.5, 'fx_chain_link');
+        link.setDepth(58); // 在所有怪(50/52)之上、飘字与首领特效之下
+        link.setTint(0xffcc44);
+        link.setAlpha(0);
+        link.setBlendMode(Phaser.BlendModes.ADD);
+        // 相邻环互转 90°,读出「环环相扣」
+        link.setRotation(chainAngle + (i % 2 === 0 ? 0 : Math.PI / 2));
+        this.tweens.add({
+          targets: link, x: tx, y: ty, alpha: 1,
+          duration: 140, ease: Phaser.Math.Easing.Quadratic.In,
+          onComplete: () => {
+            this.tweens.add({
+              targets: link, alpha: 0,
+              delay: Math.max(0, ms - 400), duration: 260,
+              onComplete: () => link.destroy(),
+            });
+          },
+        });
+      }
+    }
   }
 
   /** 命数指标记(镀金/印记)。贴在小怪头顶 320ms 后自毁 */

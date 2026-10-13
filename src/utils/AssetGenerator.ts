@@ -754,6 +754,13 @@ function generateProjectiles(scene: Phaser.Scene): void {
       { x: 12, y: 7.5 }, { x: 16.5, y: 12 }, { x: 12, y: 16.5 }, { x: 7.5, y: 12 },
     ], true);
   });
+
+  // 定身锁链的一环。白色椭圆环、靠 tint 上金色 —— 与 fx_crit 同一条约定。
+  // 使用时相邻两环互转 90°,读出「环环相扣」而不是一排珠子
+  makeTexture(scene, 'fx_chain_link', 12, 8, (g) => {
+    g.lineStyle(2, 0xffffff, 1);
+    g.strokeEllipse(6, 4, 9, 5);
+  });
 }
 
 /**
