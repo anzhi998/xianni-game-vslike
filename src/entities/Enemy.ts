@@ -118,10 +118,10 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** 环绕方向(+1 / -1),flank 用 —— 每只怪自己定,免得整群同向转成一圈 */
   public flankDir = 1;
   /**
-   * 定身截止时刻(ms)。由 ScanField 每帧刷新。
+   * 定身截止时刻(ms)。由 applyDamageToEnemy 命中定身术时设置。
    *
-   * 移动的定身靠速度覆盖就够了,这个字段管的是**动作**:开火、引信、冲锋起手 ——
-   * 定住一只术修却让它继续放法,「定身」这个词就只剩一半
+   * 移动停:applyStatusMotion 统一将速度归零(与眩晕同一条路)。
+   * 动作停:tryFire、bomber 引信、charger 状态机各自有 frozenUntil 早退。
    */
   public frozenUntil = 0;
   /**

@@ -139,7 +139,9 @@ export class EnemyAiSystem {
     if (now < e.slowUntil) vx *= 1 - Math.min(0.6, e.slowMul);
     if (now < e.slowUntil) vy *= 1 - Math.min(0.6, e.slowMul);
 
-    if (now < e.stunnedUntil) {
+    if (now < e.stunnedUntil || now < e.frozenUntil) {
+      // 眩晕连移动一起停;定身也停移动 —— charger 自己有早退检查,
+      // 但 chase/ranged/flank/bomber 全靠这里兜住
       vx = 0;
       vy = 0;
     } else {
