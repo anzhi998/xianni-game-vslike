@@ -89,12 +89,33 @@ export const CONSUMABLES: ConsumableDef[] = ALL_CONSUMABLES.filter(
  *
  * 抽的是**类别**而不是具体条目:先按权重摇一个还有货的类别,再从那一类里随机取。
  * 类别全空时回落到消耗品 —— 绝不出「空面板」。
+ *
+ * ⚠️ **「遗物祭炼」拆成两档,不是为了分前后期,是为了分稀释。**
+ *
+ *   桶内是**均匀抽取**的:装了 6 件可升级遗物时,分给某一件的概率就是 1/6。
+ *   而专属遗物祭炼不是普通收益 —— 它是**道法融合的硬门槛**(专属遗物 5 级,
+ *   见 EvolutionConfig)。让它和「冷却遗物 +1 级」抢同一个名额,结果是玩家
+ *   明明攥着火系钥匙,却整局都抽不到那张卡去把它养到 5 级。
+ *
+ *   这与本文件顶部的口径是同一条:**先把会被稀释的东西分桶,再谈权重**。
+ *   精英宝箱的掉落池早就这么做了(`EliteConfig.KEY_WEIGHT = 3`,专属优先);
+ *   悟道池此前漏了这一步 —— 13 的权重再被除以 5~6,单件专属仅约 4%/次升级。
+ *
+ * 拆开后:专属祭炼每张卡 ≈ 18/117 ≈ 15%/次抽取(第一张卡被「保底未拥有项」
+ * 占用,实际是第 2、3 张),单件专属在装 2 件时才被 2 除 —— 比原来高一个量级,
+ * 又没高到压住新法术/新遗物(两者合计 55)。
  */
-export const CARD_WEIGHTS: Record<'newSpell' | 'spellLevel' | 'newRelic' | 'relicLevel' | 'consumable', number> = {
+export const CARD_WEIGHTS: Record<
+  'newSpell' | 'spellLevel' | 'newRelic' | 'relicLevelKey' | 'relicLevel' | 'consumable',
+  number
+> = {
   newSpell: 30,
   spellLevel: 22,
   newRelic: 25,
-  relicLevel: 13,
+  /** 专属遗物祭炼:融合门槛,单独一档防止被通用遗物稀释 */
+  relicLevelKey: 18,
+  /** 通用遗物祭炼(冷却/血量/攻速/拾取…) */
+  relicLevel: 12,
   consumable: 10,
 };
 

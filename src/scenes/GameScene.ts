@@ -1158,7 +1158,10 @@ export class GameScene extends Phaser.Scene {
       newSpell: this.cardsNewSpell(),
       spellLevel: this.cardsSpellLevel(),
       newRelic: this.cardsNewRelic(),
-      relicLevel: this.cardsRelicLevel(),
+      // 专属 / 通用分桶出卡:桶内均匀抽取,合在一起会让专属祭炼卡
+      // 被通用遗物稀释成 1/6 —— 而它是道法融合的门槛。见 CARD_WEIGHTS 注释
+      relicLevelKey: this.cardsRelicLevel(true),
+      relicLevel: this.cardsRelicLevel(false),
       consumable: CONSUMABLES.map(consumableCard),
     };
     const order = Object.keys(CARD_WEIGHTS) as Array<keyof typeof CARD_WEIGHTS>;
@@ -1273,9 +1276,18 @@ export class GameScene extends Phaser.Scene {
       });
   }
 
-  private cardsRelicLevel(): Upgrade[] {
+  /**
+   * 已装备遗物的「祭炼」卡。满级(5 级)的不出现。
+   *
+   * @param keyOnly 只要**专属**遗物(融合的钥匙)。卡池把它单独当一类摇,
+   *   因为桶内是均匀抽取 —— 混在一起时专属卡会被通用遗物按件数稀释,
+   *   而它承担的是「解锁道法融合」这个门槛,不是普通数值收益。
+   *   (专属遗物必然对应一门已学会的神通:两条入池路径都卡了这个门槛)
+   */
+  private cardsRelicLevel(keyOnly: boolean): Upgrade[] {
     return this.relicSystem.getEquipped()
       .filter((r) => this.relicSystem.canUpgrade(r.id))
+      .filter((r) => !keyOnly || !!RELICS[r.id].exclusive)
       .map((r) => ({
         id: `relicLevel_${r.id}`,
         type: 'relicLevel' as const,
