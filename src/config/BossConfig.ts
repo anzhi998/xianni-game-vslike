@@ -436,8 +436,8 @@ export const BOSSES: Record<string, BossDef> = {
    * ⚠️ 杀戮仙诀是唯一**不随阶段变强**的一招(5s/15s 全程一样):免伤吃的是
    *    总 DPS 的固定比例,跟着狂暴一起加会把它从「节奏题」变成「数值墙」。
    *
-   * 血量 10000(写在 ENEMIES.tianyunzi):20:00 玩家单体 DPS 约 250–300,
-   * 刨去闪现无敌的窗口,全程约 40 秒 —— 比朱雀略长是刻意的:
+   * 血量 15000(写在 ENEMIES.tianyunzi):20:00 玩家单体 DPS 约 250–300,
+   * 刨去闪现无敌的窗口,全程约 60 秒 —— 比朱雀长得多是刻意的:
    * 它的压力被分摊给了怪堆,本体该给的只是「打不中」的焦躁。
    */
   tianyunzi: {
@@ -510,8 +510,9 @@ export const BOSSES: Record<string, BossDef> = {
    * 剑肖十二子是第二层:他们本身很弱(原著里几乎是纸面修为,实战被王林屠尽),
    * 作用是**打断玩家的距离计算** —— 你想站在域外慢慢磨,十二子就从背后围上来。
    *
-   * 数值(9000)介于朱雀(4000)与天运子(10000)之间 —— 第一次见 Boss 的玩家
-   * 不能被秒杀(接触伤 18,弱于朱雀),但拖长=剑域越张越大、弟子越聚越多。
+   * 数值(9000)介于朱雀(4000)与天运子(15000)之间 —— 他不靠血量拖时间,
+   * 靠的是「近身就要付钱」:接触伤 27(略高于朱雀 26)、剑域 dps 24→33→45,
+   * 三只 Boss 里贴脸站桩的代价最高。拖长 = 剑域越张越大、弟子越聚越多。
    */
   lingtianhou: {
     id: 'lingtianhou', name: '凌天侯·剑尊分身',
@@ -524,23 +525,23 @@ export const BOSSES: Record<string, BossDef> = {
       {
         // 一阶:刚亮剑。剑域很小(140px),只够逼玩家别贴脸站着;弟子两人一轮
         name: '剑域·初开', hpAbove: 0.6, speed: 70, tempo: 1,
-        fan: { count: 4, spread: 1.2, damage: 14, speed: 260, intervalMs: 2400, ...LINGTIANHOU_SWORD },
-        domain: { radius: 140, dps: 16, tickMs: 500 },
+        fan: { count: 4, spread: 1.2, damage: 21, speed: 260, intervalMs: 2400, ...LINGTIANHOU_SWORD },
+        domain: { radius: 140, dps: 24, tickMs: 500 },
         summon: { count: 2, type: 'sword_disciple', maxAlive: 6, intervalMs: 6000 },
       },
       {
         // 二阶:剑域扩张到 210px,「近身输出」的代价开始明显
         name: '剑域·合围', hpAbove: 0.28, speed: 78, tempo: 1,
-        fan: { count: 6, spread: 1.4, damage: 16, speed: 280, intervalMs: 2000, ...LINGTIANHOU_SWORD },
-        domain: { radius: 210, dps: 22, tickMs: 500 },
+        fan: { count: 6, spread: 1.4, damage: 24, speed: 280, intervalMs: 2000, ...LINGTIANHOU_SWORD },
+        domain: { radius: 210, dps: 33, tickMs: 500 },
         summon: { count: 3, type: 'sword_disciple', maxAlive: 10, intervalMs: 5200 },
       },
       {
         // 三阶:剑域全开 300px,弟子三人一轮 —— 域内几乎没有安全输出位,
         // 玩家被迫在「掉血换输出」与「退出去但打不动」之间反复权衡
         name: '剑域·万物皆斩', hpAbove: 0, speed: 92, tempo: 1.15,
-        fan: { count: 8, spread: 1.6, damage: 18, speed: 300, intervalMs: 1700, ...LINGTIANHOU_SWORD },
-        domain: { radius: 300, dps: 30, tickMs: 480 },
+        fan: { count: 8, spread: 1.6, damage: 27, speed: 300, intervalMs: 1700, ...LINGTIANHOU_SWORD },
+        domain: { radius: 300, dps: 45, tickMs: 480 },
         summon: { count: 3, type: 'sword_disciple', maxAlive: 12, intervalMs: 4600 },
       },
     ],

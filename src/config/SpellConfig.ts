@@ -467,14 +467,21 @@ export const SPELLS: Record<string, SpellDef> = {
       //    腐尸(15px)、石傀(20px)都小,屏幕上读不出「我在输出」。
       //    与 `SpellLevel.visualScale`(投射物那张)同名不同义:那边是
       //    「半径 ÷ scale」成对给,这边没有任何东西需要抵消。
-      { damage: 9, cooldown: 5.98, count: 2, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.5, orbitSpeed: 2.1, visualScale: 1.8 },
-      { damage: 11, cooldown: 5.61, count: 2, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.5, orbitSpeed: 2.24, visualScale: 1.8 },
-      { damage: 11, cooldown: 5.19, count: 3, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.6, orbitSpeed: 2.42, visualScale: 1.9, note: '飞剑增至 3 把' },
-      { damage: 13, cooldown: 4.80, count: 3, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.8, orbitSpeed: 2.62, visualScale: 2.0 },
-      { damage: 13, cooldown: 4.39, count: 4, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.8, orbitSpeed: 2.86, visualScale: 2.05 },
-      { damage: 17, cooldown: 4.00, count: 4, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 2.0, orbitSpeed: 3.14, visualScale: 2.15 },
-      { damage: 17, cooldown: 3.60, count: 5, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 2.0, orbitSpeed: 3.49, visualScale: 2.25 },
-      { damage: 21, cooldown: 3.20, count: 6, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 2.2, orbitSpeed: 3.93, visualScale: 2.4 },
+      // ⚠️ `orbitRadiusGrid` 全表按「原值 × 2/3」下调过一轮(用户口径「缩小 1/3」,
+      //    1 格 = 64px,故 2.2 格 141px → 1.45 格 93px)。取 0.05 粒度是为了保住
+      //    「逐级向外张」的读感(1.0 < 1.05 < 1.2 < 1.35 < 1.45),否则 1.5→1.0
+      //    与 1.6→1.05 会被四舍五入压成同值,升级反而看不出变化。
+      //    ⚠️ 半径**只改覆盖面,不改命中次数** —— `hitRadius`(恒定 16px)、
+      //    `lifeLaps`、`orbitSpeed` 都没动,所以每只怪吃几下、DPS 怎么算全不变;
+      //    变的是「能打到离自己多远的怪」:剑阵从此更贴身,远处确实更容易漏。
+      { damage: 9, cooldown: 5.98, count: 2, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.0, orbitSpeed: 2.1, visualScale: 1.8 },
+      { damage: 11, cooldown: 5.61, count: 2, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.0, orbitSpeed: 2.24, visualScale: 1.8 },
+      { damage: 11, cooldown: 5.19, count: 3, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.05, orbitSpeed: 2.42, visualScale: 1.9, note: '飞剑增至 3 把' },
+      { damage: 13, cooldown: 4.80, count: 3, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.2, orbitSpeed: 2.62, visualScale: 2.0 },
+      { damage: 13, cooldown: 4.39, count: 4, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.2, orbitSpeed: 2.86, visualScale: 2.05 },
+      { damage: 17, cooldown: 4.00, count: 4, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.35, orbitSpeed: 3.14, visualScale: 2.15 },
+      { damage: 17, cooldown: 3.60, count: 5, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.35, orbitSpeed: 3.49, visualScale: 2.25 },
+      { damage: 21, cooldown: 3.20, count: 6, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.45, orbitSpeed: 3.93, visualScale: 2.4 },
     ],
   },
 

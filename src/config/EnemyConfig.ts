@@ -304,13 +304,14 @@ export const ENEMIES: Record<string, EnemyConfig> = {
    * 天运子·分身 —— 罗天星域天运宗主,20:00 登场。
    *
    * 招式(命数镀金 / 无敌闪现)与阶段节奏写在 BossConfig,这里只定
-   * 「它是一只什么样的怪」。血量比朱雀高一档:20:00 的玩家 Build 已近成型,
-   * 而它的机制不直接打血 —— 战斗时长靠闪现的无敌窗口拉长,不靠堆甲。
+   * 「它是一只什么样的怪」。血量在朱雀(4000)之上大幅拉高(15000):
+   * 20:00 的玩家 Build 已近成型,而它的机制不直接打血 ——
+   * 战斗时长靠血量与闪现的无敌窗口一起拉长,不靠堆甲。
    */
   tianyunzi: {
     id: 'tianyunzi', name: '天运子·分身',
     approach: 'boss', archetype: 'guardian',
-    maxHealth: 10000, speed: 64, contactDamage: 34, xpValue: 500, size: 72,
+    maxHealth: 15000, speed: 64, contactDamage: 34, xpValue: 500, size: 72,
     color: 0x8855ee, bodyColor: 0xd8b860,
     armor: 0.22,
     attackRange: 300, fireIntervalMs: 2800, shotSpeed: 240, shotDamage: 18,
@@ -324,16 +325,17 @@ export const ENEMIES: Record<string, EnemyConfig> = {
    * 「灭生老人」外放的一道**监视分身** —— 所以这里的「试炼幻影」换成了
    * 「剑尊分身」:他的分量不在数值,在于他带的**剑域**与**剑肖十二子**。
    *
-   * 数值故意「没那么吓人」:接触伤 18(比朱雀 26 低一档),装甲 0.10(最低档),
-   * 扇形弹 14-18。真正的难度来自机制(剑域持续掉血 + 弟子围堵),不在数值。
+   * 数值上他不走「硬碰硬」:装甲 0.10(最低档),但接触伤 27(略高于朱雀 26)、
+   * 剑气点射 21 —— 贴脸站桩的代价是三只 Boss 里最高的。真正的难度仍来自机制
+   * (剑域持续掉血 + 弟子围堵):数值只负责让「站在剑尊身边」变成一件要付钱的事。
    */
   lingtianhou: {
     id: 'lingtianhou', name: '凌天侯·剑尊分身',
     approach: 'boss', archetype: 'guardian',
-    maxHealth: 9000, speed: 70, contactDamage: 18, xpValue: 400, size: 70,
+    maxHealth: 9000, speed: 70, contactDamage: 27, xpValue: 400, size: 70,
     color: 0x9db4d0, bodyColor: 0xe4ecf6,
     armor: 0.10,
-    attackRange: 300, fireIntervalMs: 2400, shotSpeed: 260, shotDamage: 14,
+    attackRange: 300, fireIntervalMs: 2400, shotSpeed: 260, shotDamage: 21,
     boss: 'lingtianhou',
   },
 
