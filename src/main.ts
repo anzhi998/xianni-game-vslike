@@ -2,8 +2,15 @@ import Phaser from 'phaser';
 import { gameConfig } from './config/GameConfig';
 import { GameScene } from './scenes/GameScene';
 import { autoPauseOnHide, lockLandscape, registerOffline } from './utils/mobile';
+import { guardMainLoop } from './utils/MainLoopGuard';
 
 const game = new Phaser.Game(gameConfig);
+
+// 主循环保险丝:接管一帧的总入口,帧内异常兜住不外抛。
+// 少了它,帧里任何一次异常都会让下一帧的 rAF 不再注册 —— 整条渲染循环当场死掉,
+// 现象就是「画面停住、点什么都没反应」(标签页还活着、控制台还能打字)。
+// 与调试无关,是常驻保护,详见 MainLoopGuard.ts
+guardMainLoop(game);
 
 // ===== 手机端外壳 =====
 // 装到主屏幕 → 离线可玩 → 锁横屏 → 切后台自动暂停。
