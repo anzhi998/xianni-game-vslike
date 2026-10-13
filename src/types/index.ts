@@ -433,6 +433,31 @@ export interface SpellRelicMods {
   shockMsAdd: number;
   /** 无视护甲比例(散魔铠甲「破魔」) */
   armorPen: number;
+  /**
+   * **局内成长型被动**(尊魂幡「杀魂」):每击杀一次,该神通伤害 +此值(加法倍率)。
+   *
+   * ⚠️ 它与 `damageMul` 的根本区别:**不是遗物等级的函数,而是击杀数的函数**。
+   *    所以这里登记的只是**斜率**,真正的乘数由开火那一刻用当前击杀数现算
+   *    (见 `killFuryBonus`)—— 它绝不能进任何「装备变更时缓存的快照」,
+   *    因为击杀数每杀一次就变,而快照只在换件时失效。
+   *    斜率与上限**确实**是装备的函数(换件会重算),所以放在这里当静态登记是对的。
+   */
+  killFuryPerKill: number;
+  /** 上一项的封顶(加法倍率)。尊魂幡 5 级 = 0.50,即最多 +50% */
+  killFuryCap: number;
+}
+
+/**
+ * 「杀魂」这类**按击杀数增长的加法倍率**的统一兑现点。
+ *
+ * 抽成函数是为了让「开火」与「暂停面板显示」永远读到同一个数 ——
+ * 两处各写一遍 `min(cap, perKill * kills)`,迟早会有人只改一处,
+ * 然后卡面上写着 +37% 而实际打出去 +12%。
+ * 没有这条被动的神通 `cap` 为 0,恒返回 0(即不增伤)。
+ */
+export function killFuryBonus(perKill: number, cap: number, kills: number): number {
+  if (cap <= 0) return 0;
+  return Math.min(cap, perKill * kills);
 }
 
 /**
@@ -504,6 +529,8 @@ export function neutralSpellMods(): SpellRelicMods {
     shockCapAdd: 0,
     shockMsAdd: 0,
     armorPen: 0,
+    killFuryPerKill: 0,
+    killFuryCap: 0,
   };
 }
 

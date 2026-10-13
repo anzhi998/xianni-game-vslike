@@ -6,6 +6,7 @@ import { EVOLUTIONS } from '../config/EvolutionConfig';
 import { BOSSES } from '../config/BossConfig';
 import { DEBUG_PANEL_ENABLED } from '../config/DebugConfig';
 import { COLOR_NORMAL, COLOR_CRIT, COLOR_ARMORED } from '../entities/DamageText';
+import { killFuryBonus } from '../types';
 // 只作类型引用 —— 调试面板要按名字调 GameScene 上的 debug* 方法。
 // type-only import 在编译后不存在,所以不会构成运行时循环依赖
 import type { GameScene } from './GameScene';
@@ -672,6 +673,21 @@ export class UIScene extends Phaser.Scene {
         fontSize: '15px',
         color: '#88ddff',
       }).setOrigin(0.5));
+
+      // 局内成长型被动(尊魂幡「杀魂」)单独一行。
+      // 为什么不能并进上面那行:`statsLine` 是**装备的静态快照**,而「杀魂」每杀一只
+      // 都在漂移 —— 玩家在这里看它一次,下一秒数就该变了。它和属性行不是一类东西。
+      // 只在真的持有这条被动时画,免得没装尊魂幡的玩家盯着一个恒 +0.0% 的死行。
+      // 兑现行数与开火共用 `killFuryBonus`,不会出现「面板写 +37% 实际打 +12%」。
+      const kills = gameStats.kills ?? 0;
+      gameStats.relicSystem.getKillFurySources().forEach((f: any, i: number) => {
+        const cur = killFuryBonus(f.perKill, f.cap, kills);
+        c.add(this.add.text(
+          w / 2, h / 2 - 118 - i * 24,
+          `${f.name}·杀魂  +${(cur * 100).toFixed(1)}%　（每杀 +${(f.perKill * 100).toFixed(2)}%，上限 +${Math.round(f.cap * 100)}%）`,
+          { fontFamily: 'monospace', fontSize: '14px', color: '#7fe8b5' },
+        ).setOrigin(0.5));
+      });
     }
 
     // 伤害飘字的颜色图例。

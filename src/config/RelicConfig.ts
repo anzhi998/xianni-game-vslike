@@ -58,6 +58,16 @@ function spellMul(level: number, per: number): number {
   return 1 + per * level;
 }
 
+/**
+ * 尊魂幡「杀魂」被动:每击杀一次的伤害加成(加法倍率)。
+ *
+ * 0.05% —— 也就是**每 20 杀 +1%**。按 WaveConfig 的节奏段累计,20:00 前后
+ * 的累计击杀在**千级**,所以它是一条「后半场才长起来」的曲线,不是开局就有的。
+ */
+const KILL_FURY_PER_KILL = 0.0005;
+/** 「杀魂」上限的每级增量:1 级 +10% → 5 级 +50%(+50% 要 1000 杀才吃满) */
+const KILL_FURY_CAP_PER_LEVEL = 0.10;
+
 export const RELICS: Record<string, RelicConfig> = {
 
   // ===== 7 件专属遗物(同时是道法融合的钥匙)=====
@@ -171,16 +181,36 @@ export const RELICS: Record<string, RelicConfig> = {
    * (statusOf 的 0.6 封顶)保证它与任何减速源叠加都不会失控。
    * ⚠️ 与厚土印同一处注意:前四级法术本体没有减速,slowAdd 挂不上去;
    *    它真正兑现是在法术 5 级自带冰缓之后 —— desc 的措辞已把这一点写明。
+   *
+   * ## 「杀魂」—— 本作第一条**局内成长型**被动
+   *
+   * 每击杀 +0.05% 伤害,上限随遗物等级 +10%/级(满级 +50%,1000 杀吃满)。
+   * 与前面那个 `damageMul` 是两种东西:
+   *   - `damageMul` 是**装备的函数** —— 换件时重算一次,之后不动;
+   *   - 「杀魂」是**击杀数的函数** —— 每杀一只都在变,不能进缓存快照。
+   * 所以它只在这里登记斜率与上限,乘数由 WeaponSystem 开火时现算
+   * (见 `killFuryBonus`),两处同源。
+   *
+   * ⚠️ **它必须活过道法融合**。融合会把尊魂幡**吸收掉**(腾出遗物槽),
+   *    而那时正是这条被动该开始发力的时刻 —— 若只从 equipped 里读,
+   *    「越杀越强」会在进化那一瞬间归零。RelicSystem 因此另记一本账
+   *    (`killFuryByRelic`),作用是**覆盖黄泉升窍诀与其进化形态两阶段**
+   *    (血缘取自 EvolutionConfig,不在这里硬编码)。
    */
   zunhunfan: {
     id: 'zunhunfan', name: '尊魂幡', color: 0x7fe8b5, exclusive: 'huangquan',
     mod: (l) => ({
-      spell: { damageMul: spellMul(l, 0.10), slowAdd: l >= MAX_RELIC_LEVEL ? 0.10 : 0 },
+      spell: {
+        damageMul: spellMul(l, 0.10),
+        slowAdd: l >= MAX_RELIC_LEVEL ? 0.10 : 0,
+        killFuryPerKill: KILL_FURY_PER_KILL,
+        killFuryCap: KILL_FURY_CAP_PER_LEVEL * l,
+      },
       player: {},
     }),
     desc: (l) => (l >= MAX_RELIC_LEVEL
-      ? '黄泉升窍诀伤害 +50%；冰缓 +10%（与法术自带冰缓叠加，可融合「道化黄泉」）'
-      : `黄泉升窍诀伤害 +${(10 * l).toFixed(0)}%`),
+      ? '黄泉升窍诀伤害 +50%；冰缓 +10%；杀魂：每击杀 +0.05% 伤害，上限 +50%（融合后仍在，可融合「道化黄泉」）'
+      : `黄泉升窍诀伤害 +${(10 * l).toFixed(0)}%；杀魂：每击杀 +0.05% 伤害，上限 +${(10 * l).toFixed(0)}%`),
   },
 
   // ===== 7 件通用遗物 =====

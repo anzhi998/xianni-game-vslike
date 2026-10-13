@@ -15,6 +15,7 @@
 import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
 import { RELICS, RELIC_SLOTS, MAX_RELIC_LEVEL } from '../config/RelicConfig';
+import { findEvolution } from '../config/EvolutionConfig';
 import { GameEvents, NEUTRAL_PLAYER_MODS, neutralSpellMods } from '../types';
 import type { PlayerRelicMods, RelicInstance, SpellRelicMods } from '../types';
 
@@ -23,6 +24,18 @@ export class RelicSystem {
   private equipped: RelicInstance[] = [];
   private playerModsCache: PlayerRelicMods | null = null;
   private spellCache = new Map<string, SpellRelicMods>();
+  /**
+   * 「杀魂」账本 —— 局内成长型被动的**永久生效**记录(遗物 id → 斜率/上限)。
+   *
+   * 为什么不能只靠 equipped 现算:**道法融合会把专属遗物吸收掉**(腾出遗物槽),
+   * 而这条被动的兑现高峰恰恰在融合之后 —— 那时 equipped 里已经没有尊魂幡,
+   * 只看 equipped 会让「越杀越强」在进化那一瞬间归零,而且不报错。
+   * 所以拿到手的那一刻就记进这里,`absorb()` 不清它。
+   *
+   * 按**遗物**记而不是按神通记:作用域(专属神通 + 其进化形态)每次现算,
+   * 于是同一件遗物不会在账本里出现两行,UI 也就不必去重。
+   */
+  private killFuryByRelic = new Map<string, { perKill: number; cap: number }>();
 
   constructor(scene: Phaser.Scene, _player: Player) {
     this.scene = scene;
@@ -72,6 +85,7 @@ export class RelicSystem {
     }
 
     this.invalidate();
+    this.latchKillFury(id);
     this.scene.events.emit(GameEvents.RELIC_EQUIPPED, id, level);
     return id;
   }
@@ -89,6 +103,7 @@ export class RelicSystem {
     if (!RELICS[newId]) return false;
     this.equipped[i] = { id: newId, level: 1 };
     this.invalidate();
+    this.latchKillFury(newId);
     this.scene.events.emit(GameEvents.RELIC_EQUIPPED, newId, 1);
     return true;
   }
@@ -100,6 +115,7 @@ export class RelicSystem {
     if (inst.level >= MAX_RELIC_LEVEL) return false;
     inst.level++;
     this.invalidate();
+    this.latchKillFury(id);
     this.scene.events.emit(GameEvents.RELIC_EQUIPPED, id, inst.level);
     return true;
   }
@@ -118,6 +134,9 @@ export class RelicSystem {
   absorb(id: string): boolean {
     const i = this.equipped.findIndex((a) => a.id === id);
     if (i < 0) return false;
+    // 融合前先记账 —— 「杀魂」的斜率与上限取自这一刻的遗物等级,之后遗物没了,
+    // 账本要留下它。放在 splice 之前是刻意的:latchKillFury 靠 equipped 反查等级。
+    this.latchKillFury(id);
     this.equipped.splice(i, 1);
     this.invalidate();
     return true;
@@ -132,6 +151,52 @@ export class RelicSystem {
       this.equipped.push({ id, level: MAX_RELIC_LEVEL });
     }
     this.invalidate();
+    this.latchKillFury(id);
+  }
+
+  /**
+   * 把一件遗物的「局内成长型被动」记进账本。
+   *
+   * 作用域 = 它专属的那门神通 **+ 该神通的进化形态**(血缘取自 EvolutionConfig,
+   * 不在这里硬编码 id)—— 「黄泉升窍诀」与「道化黄泉」是同一门法术的两个阶段,
+   * 被动不该在融合那一刻断掉。
+   *
+   * 取 `Math.max` 而不是覆盖:将来若有多件遗物给同一条被动,弱的那件不该把强的压回去。
+   */
+  private latchKillFury(relicId: string): void {
+    const cfg = RELICS[relicId];
+    const inst = this.equipped.find((a) => a.id === relicId);
+    if (!cfg || !inst) return;
+    const s = cfg.mod(inst.level).spell;
+    if (!s?.killFuryCap) return;
+    const cur = this.killFuryByRelic.get(relicId);
+    this.killFuryByRelic.set(relicId, {
+      perKill: Math.max(cur?.perKill ?? 0, s.killFuryPerKill ?? 0),
+      cap: Math.max(cur?.cap ?? 0, s.killFuryCap),
+    });
+  }
+
+  /** 某件遗物的被动作用域(专属神通 + 其进化形态)。给兵不血刃的对外展示用 */
+  private killFuryScope(relicId: string): string[] {
+    const exclusive = RELICS[relicId]?.exclusive;
+    if (!exclusive) return [];
+    const evo = findEvolution(exclusive);
+    return evo ? [exclusive, evo.evolved] : [exclusive];
+  }
+
+  /**
+   * 当前生效的「局内成长型」被动清单 —— 供暂停面板展示。
+   *
+   * 只读**账本**:因为它按遗物记,天然覆盖了「融合已经把它吞了」这一种,
+   * 而遍历 equipped 做不到(那正是这条被动最该发力的阶段)。
+   * 返回遗物名而不是 id,UI 不必认识遗物表。
+   */
+  getKillFurySources(): Array<{ name: string; perKill: number; cap: number }> {
+    const out: Array<{ name: string; perKill: number; cap: number }> = [];
+    for (const [relicId, v] of this.killFuryByRelic) {
+      out.push({ name: RELICS[relicId]?.name ?? relicId, perKill: v.perKill, cap: v.cap });
+    }
+    return out;
   }
 
   getPlayerMods(): PlayerRelicMods {
@@ -205,6 +270,17 @@ export class RelicSystem {
       m.shockCapAdd += s.shockCapAdd ?? 0;
       m.shockMsAdd += s.shockMsAdd ?? 0;
       m.armorPen = Math.max(m.armorPen, s.armorPen ?? 0);
+      m.killFuryPerKill = Math.max(m.killFuryPerKill, s.killFuryPerKill ?? 0);
+      m.killFuryCap = Math.max(m.killFuryCap, s.killFuryCap ?? 0);
+    }
+    // 局内成长型被动(「杀魂」)再叠一层**账本**,覆盖「遗物已被融合吞掉」的形态。
+    // 与上面那一次是 `Math.max`,所以在手上时重复合并不出问题 ——
+    // 两条路都留着是为了一处都不漏:装/升/换/调试都会记账,
+    // 而账本还要在遗物消失后继续兑现。
+    for (const [relicId, v] of this.killFuryByRelic) {
+      if (!this.killFuryScope(relicId).includes(spellId)) continue;
+      m.killFuryPerKill = Math.max(m.killFuryPerKill, v.perKill);
+      m.killFuryCap = Math.max(m.killFuryCap, v.cap);
     }
     // 飞剑数走「每 2 级 +1,向下取整」—— 0.4 把飞剑在屏幕上分不出来
     m.orbAdd = Math.floor(m.orbAdd);

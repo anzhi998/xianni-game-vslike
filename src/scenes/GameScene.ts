@@ -479,7 +479,7 @@ export class GameScene extends Phaser.Scene {
       barriers: this.barrierPool,
       iceSpikes: this.iceSpikePool,
       waves: this.wavePool,
-    });
+    }, () => this.kills);
     // 开局自带火球术 —— 设计书第一节:主角王林的起始法术
     this.weaponSystem.addSpell(STARTING_SPELL);
 

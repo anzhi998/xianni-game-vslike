@@ -15,6 +15,7 @@ import { findEvolution } from '../config/EvolutionConfig';
 import type { ResolvedSpell } from '../config/SpellConfig';
 import type { RelicSystem } from './RelicSystem';
 import type { AttackForm, DamageOptions, SpellRelicMods } from '../types';
+import { killFuryBonus } from '../types';
 import { findNearestEnemy } from '../utils/Targeting';
 import { viewRadius } from '../config/GameConfig';
 import { MathUtils } from '../utils/MathUtils';
@@ -93,6 +94,8 @@ export class WeaponSystem {
   private pools: WeaponPools;
   private enemyGroup: Phaser.GameObjects.Group;
   private relicSystem: RelicSystem;
+  /** 当前击杀数(局内成长型被动「杀魂」的输入) */
+  private getKillCount: () => number;
 
   constructor(
     scene: Phaser.Scene,
@@ -100,12 +103,19 @@ export class WeaponSystem {
     enemyGroup: Phaser.GameObjects.Group,
     relicSystem: RelicSystem,
     pools: WeaponPools,
+    /**
+     * 当前击杀数。**注入而不是直接读 GameScene** —— 神通系统只该知道
+     * 「有这么个数」,不该知道它记在哪个场景字段上(与 RealmSystem 的
+     * `setSlotCap` 同一思路:域间只递数据,不递场景)。
+     */
+    getKillCount: () => number,
   ) {
     this.scene = scene;
     this.player = player;
     this.enemyGroup = enemyGroup;
     this.relicSystem = relicSystem;
     this.pools = pools;
+    this.getKillCount = getKillCount;
   }
 
   // ===== 神通栏 =====
@@ -294,9 +304,21 @@ export class WeaponSystem {
     );
   }
 
+  /**
+   * 「杀魂」乘数 —— 局内成长型被动的兑现点。
+   *
+   * 斜率与上限来自遗物(在 mods 里,随装备重算),击杀数是**本局的实时值**,
+   * 所以乘数在这里现算,**不进任何缓存**(同一门神通每次开火都要重读)。
+   * 没有这条被动的神通 `killFuryCap` 为 0,直接返回 1 —— 也就是零成本。
+   * 公式与暂停面板的显示共用 `killFuryBonus`,两处永不脱钩。
+   */
+  private killFuryMul(mods: SpellRelicMods): number {
+    return 1 + killFuryBonus(mods.killFuryPerKill, mods.killFuryCap, this.getKillCount());
+  }
+
   /** 该形态当前实际伤害 */
   private damageOf(sp: ResolvedSpell, mods: SpellRelicMods): number {
-    return sp.damage * mods.damageMul * this.player.damageMul;
+    return sp.damage * mods.damageMul * this.player.damageMul * this.killFuryMul(mods);
   }
 
   /** 该形态本次发射附带的状态 */
@@ -634,7 +656,7 @@ export class WeaponSystem {
     const b = sp.def.burst;
     if (!b) return;
     const count = b.count > 0 ? b.count : Math.max(1, sp.count + mods.orbAdd);
-    const damage = b.damage * mods.damageMul * this.player.damageMul;
+    const damage = b.damage * mods.damageMul * this.player.damageMul * this.killFuryMul(mods);
     const status: DamageOptions = { armorPen: b.armorPen, burn: b.bleed, slow: null, shock: null, sourceId: sp.id };
 
     // 「收束」:所有在飞的剑先向内缩一下再斩出去。
