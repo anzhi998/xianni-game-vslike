@@ -90,6 +90,9 @@ export function expectedTextureKeys(): string[] {
     // 朱雀火雨的陨石。AI 出图(紫红陨火,尖端朝左下)+ make-finger.mjs 处理。
     // 存在时 MeteorFall 用它,缺失时回退 Graphics 锯齿陨石
     'fx_meteor',
+    // 道化黄泉的浪头。AI 出图(品红底均匀破浪条,泡沫在顶边)+ make-wave.mjs 处理。
+    // 存在时 UnderworldWave 把它钉在推进前沿,缺失时回退 Graphics 前沿弧 + 浪花
+    'fx_daohua_wave',
   );
   // 主角四视图。左边由 setFlipX 镜像,不单列 —— 三个键四个朝向。
   // `player` 是缺图兜底,排在最后

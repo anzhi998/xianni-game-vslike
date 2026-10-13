@@ -22,6 +22,15 @@ import type { DamageApplier, DamageOptions } from '../../types';
  * 判定则用世界坐标走 forEachEnemyInRect(投影法),两边同形不同源,
  * 靠同一组 length/width 参数对齐。
  *
+ * ## 浪头贴图(AI 出图)
+ *
+ * 浪身是 Graphics 画的半透明矩形,浪头则是真实素材 `fx_daohua_wave`
+ * —— 一段**均匀破浪条**(顶边连续卷沫、下面浪身,沿长度方向均匀,
+ * 见 `scripts/make-wave.mjs` 头注释),钉在推进前沿、随容器旋转,
+ * 泡沫略微领先伤害前沿。素材按「浪朝右」存储,故在容器里再转 +90°。
+ * 贴图在场时 Graphics 不再画前沿弧线与泪滴浪花(避免两层泡沫);
+ * 素材缺失时整体退回纯 Graphics 画法,一个分支都不用改判定。
+ *
  * ## 不使用 tween
  *
  * 与 SandWave / IceSpikeDrop 同一条纪律:池化对象一律 preUpdate 计时,
@@ -33,7 +42,25 @@ export class UnderworldWave extends Phaser.GameObjects.Container {
   /** 残留期给洼内敌人刷减速的间隔。刷新而非常驻:慢走速的怪不靠帧级轮询 */
   private static readonly SLOW_TICK_MS = 400;
 
+  /**
+   * 浪头贴图的摆位常量(素材 `fx_daohua_wave`,一段均匀破浪条)。
+   *
+   * 素材按「浪朝右画」存储(泡沫在贴图顶边),而容器局部 +x 才是推进方向,
+   * 所以浪头要**额外转 +90°**:转完贴图顶边正好指向 +x(前沿)。
+   * 这与投射物「贴图朝右 + setRotation(角)」是同一条约定,只是这里转好之后
+   * 跟着容器一起走,不再单独旋转。
+   */
+  /** 浪头显示宽度 = 浪前宽 × 此系数:泡沫溢出判定边一点,更像浪翻出界 */
+  private static readonly CREST_SPAN_MUL = 1.15;
+  /** 浪头前沿超出伤害前沿的 px(泡沫先于判定一点,与旧泪滴浪花同语义) */
+  private static readonly CREST_LEAD = 10;
+  /** 浪头中心最小回撤:施放瞬间(front≈0)不让浪头整体铺到施放者身后 */
+  private static readonly CREST_MIN_CENTER = 26;
+
   private gfx: Phaser.GameObjects.Graphics;
+  /** AI 浪头(可选:素材缺失时为 null,退回纯 Graphics 画法) */
+  private crest: Phaser.GameObjects.Image | null = null;
+  private crestScale = 1;
   private enemyGroup!: Phaser.GameObjects.Group;
   private applyDamage!: DamageApplier;
 
@@ -53,7 +80,18 @@ export class UnderworldWave extends Phaser.GameObjects.Container {
   constructor(scene: Phaser.Scene) {
     super(scene, 0, 0);
     this.gfx = scene.add.graphics();
-    this.add([this.gfx]);
+    // 浪头:AssetLoader 用 import.meta.glob 自动加载 src/assets 下的 png,
+    // 文件名 = 纹理键。素材缺失(还没出图/加载失败)时保持 null,
+    // 走纯 Graphics 画法 —— 和 fx_fire_sea 的降级是同一条纪律。
+    if (scene.textures.exists('fx_daohua_wave')) {
+      const img = scene.add.image(0, 0, 'fx_daohua_wave');
+      // 贴图按「浪朝右」画,在容器里转 +90° 后顶边(泡沫)指向推进方向
+      img.setRotation(Math.PI / 2);
+      this.crest = img;
+      this.add([this.gfx, img]);      // 浪头盖在浪身之上
+    } else {
+      this.add([this.gfx]);
+    }
     scene.add.existing(this);
     this.setActive(false).setVisible(false);
     // 与沙浪同层:贴地的水,不遮怪
@@ -94,6 +132,14 @@ export class UnderworldWave extends Phaser.GameObjects.Container {
     this.setPosition(x, y);
     this.setRotation(facing);
     this.setAlpha(1);
+    // 浪头缩放跟着本次的浪前宽走(显示宽度 = 浪前宽 × CREST_SPAN_MUL)。
+    // 游戏 pixelArt:true 是 NEAREST 过滤,贴图按显示尺寸烘焙(220 ≈ 192×1.15),
+    // 这里算出来 ≈ 1.0,一比一显示不会把缩小图抽成噪点(规格 §0 的老坑)。
+    if (this.crest) {
+      this.crestScale = (this.widthPx * UnderworldWave.CREST_SPAN_MUL) / this.crest.width;
+      this.crest.setScale(this.crestScale);
+      this.crest.setVisible(true);
+    }
     this.draw();
   }
 
@@ -130,20 +176,19 @@ export class UnderworldWave extends Phaser.GameObjects.Container {
   /**
    * 局部坐标画浪:+x 沿面向、±y 为横向半宽。
    *
-   * 推进段(7 层叠加,从底到顶):
+   * 推进段(Graphics 5 层 + 浪头贴图):
    *   1. 浪体实体 —— 整片矩形的低 alpha 填色,推进过程中透明度小幅衰减;
    *   2. 浪体高光(上半段偏冷的光带) —— 让水面读出方向感;
-   *   3. 前沿的「冲击弧」—— 一道亮色 capstone 弧线,模拟波前水体堆起的弧;
-   *   4. **波前后的暗带**(front-12 处)—— 推进的「厚度」;
-   *   5. **波前卷起的浪花**(front 处一对泪滴,朝外)—— 告诉玩家水从脚下喷过来;
-   *   6. **水面反光**(顶部一条亮色 line)—— 给水面「流」感;
-   *   7. **两侧稍退**(底部 -half 与 half 一条深色边)—— 让矩形像水而不是木条。
+   *   3. 上沿亮边 + 底沿暗线 —— 让矩形像水而不是木条;
+   *   4. 波前后的暗带(front-14 处)—— 推进的「厚度」;
+   *   5. 水面反光线(顶部一条亮色 line)—— 给水面「流」感;
+   *   +. **浪头贴图**(有素材时)—— 钉在推进前沿的破浪条,泡沫领先伤害前沿;
+   *      此时 6/7 两层跳过,否则前沿上会叠出两层泡沫。
+   *   6. 冲击弧(仅无贴图时)—— 亮色 capstone 弧线,模拟波前水体堆起的弧;
+   *   7. 浪花泪滴 + 碎水珠(仅无贴图时)—— 告诉玩家水从脚下喷过来。
    *
-   * 残留段:整片水洼匀速淡出,矩形内保留一道水面 highlight,框是软边粗描。
-   *
-   * 与 SandWave 同源的「**推进 vs 残留两段 + 推进段三层(底色 / 主线 / 亮弧)**」
-   * 设计语言:沙浪用扇面 slice,这里用矩形 fillRect,层数与命名都对齐,
-   * 这样以后看代码就能认出「这是水浪版不是沙浪版」。
+   * 残留段:整片水洼匀速淡出,矩形内保留一道水面 highlight,框是软边粗描;
+   * 浪头贴图退场(洼里不再立着浪墙)。
    */
   private draw(): void {
     const g = this.gfx;
@@ -183,43 +228,60 @@ export class UnderworldWave extends Phaser.GameObjects.Container {
       g.lineStyle(1, hi, 0.85 * alpha);
       g.lineBetween(Math.max(0, front - 6), -half + 1, front, -half + 1);
 
-      /* 6. 冲击弧:波前 caps a «Δ» 形 —— 上下两道粗亮线 + 一段弧,
-            让水从脚下腾起的同时还能看见「翻过来的波顶」 */
-      // 6a. 上沿亮边增厚 + 反白
-      g.lineStyle(4, hi, 0.95 * alpha);
-      g.lineBetween(front, -half, front, half);
-      // 6b. 波前中央往外鼓一道小弧(模拟水头卷起的反射)
-      const brimR = Math.min(this.widthPx * 0.42, half * 1.05);
-      g.lineStyle(3, hi, 0.80 * alpha);
-      g.beginPath();
-      g.arc(front, 0, brimR, -Math.PI / 2, Math.PI / 2, false);
-      g.strokePath();
+      // 浪头贴图:随浪前推进,泡沫略微领先伤害前沿。
+      // 摆位照抄 preview-wave.mjs —— 改这里必须同步改那边。
+      if (this.crest) {
+        // 旋转 +90° 后,贴图的**高度**落在推进方向上
+        const depth = this.crest.height * this.crestScale;
+        const cx = Math.max(
+          front + UnderworldWave.CREST_LEAD - depth / 2,
+          UnderworldWave.CREST_MIN_CENTER,
+        );
+        this.crest.setPosition(cx, 0);
+        this.crest.setAlpha(alpha);
+      }
 
-      /* 7. 浪花:波前上下沿各一对泪滴(朝外),给水「飞起来」的瞬间 */
-      const foamLen = Math.min(this.widthPx * 0.55, half * 1.4);
-      // 上泪滴
-      g.fillStyle(hi, 0.85 * alpha);
-      g.fillTriangle(
-        front, -half - 1,
-        front + foamLen * 0.55, -half - 1 - foamLen * 0.35,
-        front + foamLen * 0.30, -half - 1,
-      );
-      // 下泪滴
-      g.fillTriangle(
-        front, half + 1,
-        front + foamLen * 0.55, half + 1 + foamLen * 0.35,
-        front + foamLen * 0.30, half + 1,
-      );
-      // 浪花碎点:上下各 2 颗小水珠(沿前沿往后撒)
-      g.fillStyle(0xffffff, 0.70 * alpha);
-      g.fillCircle(front - foamLen * 0.20, -half - 3, 1.2);
-      g.fillCircle(front - foamLen * 0.45, -half - 6, 0.9);
-      g.fillCircle(front - foamLen * 0.20, half + 3, 1.2);
-      g.fillCircle(front - foamLen * 0.45, half + 6, 0.9);
-      g.fillCircle(front + foamLen * 0.15, -half + 2, 0.8);
-      g.fillCircle(front + foamLen * 0.15, half - 2, 0.8);
+      if (!this.crest) {
+        /* 6. 冲击弧:波前 caps a «Δ» 形 —— 上下两道粗亮线 + 一段弧,
+              让水从脚下腾起的同时还能看见「翻过来的波顶」。
+              (浪头贴图在场时跳过:贴图自己带泡沫,再画就是两层泡沫) */
+        // 6a. 上沿亮边增厚 + 反白
+        g.lineStyle(4, hi, 0.95 * alpha);
+        g.lineBetween(front, -half, front, half);
+        // 6b. 波前中央往外鼓一道小弧(模拟水头卷起的反射)
+        const brimR = Math.min(this.widthPx * 0.42, half * 1.05);
+        g.lineStyle(3, hi, 0.80 * alpha);
+        g.beginPath();
+        g.arc(front, 0, brimR, -Math.PI / 2, Math.PI / 2, false);
+        g.strokePath();
+
+        /* 7. 浪花:波前上下沿各一对泪滴(朝外),给水「飞起来」的瞬间 */
+        const foamLen = Math.min(this.widthPx * 0.55, half * 1.4);
+        // 上泪滴
+        g.fillStyle(hi, 0.85 * alpha);
+        g.fillTriangle(
+          front, -half - 1,
+          front + foamLen * 0.55, -half - 1 - foamLen * 0.35,
+          front + foamLen * 0.30, -half - 1,
+        );
+        // 下泪滴
+        g.fillTriangle(
+          front, half + 1,
+          front + foamLen * 0.55, half + 1 + foamLen * 0.35,
+          front + foamLen * 0.30, half + 1,
+        );
+        // 浪花碎点:上下各 2 颗小水珠(沿前沿往后撒)
+        g.fillStyle(0xffffff, 0.70 * alpha);
+        g.fillCircle(front - foamLen * 0.20, -half - 3, 1.2);
+        g.fillCircle(front - foamLen * 0.45, -half - 6, 0.9);
+        g.fillCircle(front - foamLen * 0.20, half + 3, 1.2);
+        g.fillCircle(front - foamLen * 0.45, half + 6, 0.9);
+        g.fillCircle(front + foamLen * 0.15, -half + 2, 0.8);
+        g.fillCircle(front + foamLen * 0.15, half - 2, 0.8);
+      }
     } else {
-      // 残留水洼:整片矩形匀速淡出
+      // 残留水洼:整片矩形匀速淡出。浪头在这里退场,洼里不再立着浪墙
+      if (this.crest) this.crest.setVisible(false);
       const t2 = Math.min(1, (this.elapsedMs - this.frontMs) / Math.max(1, this.lingerMs));
       const alpha = 1 - t2;
       const color = this.color;
