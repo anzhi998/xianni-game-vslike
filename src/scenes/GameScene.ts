@@ -93,10 +93,8 @@ export class GameScene extends Phaser.Scene {
   public chestSystem!: ChestSystem;
   public hazardSystem!: HazardSystem;
   public bossSystem!: BossSystem;
-  /** DPS 统计(调参工具)。唯一伤害入口 applyDamageToEnemy 每发都会 record */
+  /** DPS 统计。唯一伤害入口 applyDamageToEnemy 每发都会 record,浮窗在 UIScene 常驻 */
   public readonly damageMeter = new DamageMeter();
-  /** 调试面板「DPS 统计」开关。UIScene 每 0.5s 读它决定浮窗显隐 */
-  public dpsMeterOn = false;
 
   // 状态
   public isPaused = false;
@@ -2207,12 +2205,6 @@ export class GameScene extends Phaser.Scene {
       n++;
     }
     return n;
-  }
-
-  /** 切换右上角的 DPS 统计浮窗。读数是 UIScene 的事,这里只拨开关 */
-  public debugToggleDps(): string {
-    this.dpsMeterOn = !this.dpsMeterOn;
-    return this.dpsMeterOn ? 'DPS 统计:开' : 'DPS 统计:关';
   }
 
   /** 把当前首领的血量直接压到指定比例,用来快速验证阶段切换(剑域半径突变) */

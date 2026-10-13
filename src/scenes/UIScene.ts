@@ -196,8 +196,8 @@ export class UIScene extends Phaser.Scene {
       });
     }
 
-    // ====== DPS 统计浮窗(调试面板开关,默认关)======
-    // 半秒刷一次足够:它是调参读数,不是动作反馈。读 DamageMeter 的滚动窗口,
+    // ====== DPS 统计浮窗(常驻)======
+    // 半秒刷一次足够:它是读数,不是动作反馈。读 DamageMeter 的滚动窗口,
     // 游戏暂停时没有新伤害入账,窗口和不变,读数自然冻结。
     this.time.addEvent({ delay: 500, loop: true, callback: () => this.refreshDpsPanel() });
 
@@ -207,15 +207,16 @@ export class UIScene extends Phaser.Scene {
   }
 
   /**
-   * DPS 浮窗:右上角、半透明黑底,每 0.5s 从 DamageMeter 拉一次快照。
+   * DPS 浮窗:常驻,右上角、半透明黑底,每 0.5s 从 DamageMeter 拉一次快照。
    *
-   * 开关状态在 GameScene.dpsMeterOn(调试面板「DPS 统计」切换),这里只读。
    * 位置刻意避开右上角的暂停按钮(y 110 以下)与左上角的血条/经验条;
    * 行数按当前有过伤害的来源数自适应,最多列 8 行(5 法位 + 其他,有余量)。
+   * 开局还没有任何伤害时不显示 —— 一块只有表头的空牌子不是信息。
    */
   private refreshDpsPanel(): void {
     const g = this.scene.get('GameScene') as GameScene | null;
-    if (!g || !g.dpsMeterOn) {
+    const rows = g?.damageMeter.snapshot() ?? [];
+    if (rows.length === 0) {
       this.dpsPanel?.setVisible(false);
       return;
     }
@@ -227,7 +228,6 @@ export class UIScene extends Phaser.Scene {
       this.dpsPanel = this.add.container(GAME_WIDTH - 16, 120, [this.dpsBg, this.dpsText]);
       this.dpsPanel.setDepth(UIScene.DEPTH_HUD);
     }
-    const rows = g.damageMeter.snapshot();
     let totalDps = 0;
     for (const r of rows) totalDps += r.dps;
     const lines = [`DPS(10s) 总 ${Math.round(totalDps)}`];
@@ -764,7 +764,6 @@ export class UIScene extends Phaser.Scene {
       { label: '开金匮', run: (g) => g.debugOpenChest() },
       { label: '填满遗物', run: (g) => g.debugGrantAllRelics() },
       { label: '下一只首领', run: (g) => g.debugNextBoss() },
-      { label: 'DPS 统计', run: (g) => g.debugToggleDps() },
       { label: '首领血压到 20%', run: (g) => g.debugBossToPhase(0.2) },
       { label: '跳到 10:00', run: (g) => g.debugSetTime(600) },
       { label: '弧带形态对比', run: (g) => g.debugArcShapes() },
