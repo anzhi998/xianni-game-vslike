@@ -368,143 +368,112 @@ function drawHuangquan() {
 
 /* ============================== 道化黄泉 ==============================
  *
- * 一道闸门 + 三股水。闸门**比图矮一截**(15 行高),门上方水浪喷涌。
- *   - 闸墩(y=18..27):左右两根立柱,中间留闸口(y=23..27)深色矩形
- *   - 闸顶横梁(y=15..18):横跨的门顶
- *   - 上方水浪(y=2..14):三股放射水流,中央一道最粗最直,左右两道斜射
+ * 一道闸门 + 一道水浪朝画面下方涌出。
+ *   - 闸门在上半部(y=4..16):横梁 + 闸墩 + 闸口 + 吊环
+ *   - 闸口下方(y=17..18):水的出口(一道亮水光)
+ *   - 主浪:从闸口底 y=18 **朝画面下方**铺到 y=29,矩形 + 浪前 + 浪花。
+ *     关键纠偏:水是**朝下流的**,不是往天上喷 —— 与 in-game UnderworldWave
+ *     视觉同源(矩形 + 浪前亮边 + 浪花),看一眼就读得出"放水了"。
  *
- * 与 huangquan 同色但剪影完全不同:锥是「竖直一根尖」,这里是一扇横向「门」。
+ * 与 huangquan 同色但剪影完全不同:锥是「竖直一根尖」,这里是一扇门 + 一道横水。
  */
 function drawDaohua() {
   const buf = Buffer.alloc(SIZE * SIZE * 4);
 
-  /* 1. 闸顶横梁(y=14..18,横跨 x=3..28) */
-  stampRect(buf, 3, 14, 28, 18, DH.gate);
-  // 闸顶高光线
-  stampRect(buf, 4, 14, 27, 14, DH.gateHi);
-  // 闸顶深线
-  stampRect(buf, 3, 18, 28, 18, DH.shadow);
+  /* 1. 闸门整体(上半部,y=4..18) */
+  // 1.1 闸顶横梁(y=4..9,横跨 x=3..28)
+  stampRect(buf, 3, 4, 28, 9, DH.gate);
+  stampRect(buf, 4, 4, 27, 4, DH.gateHi);
+  stampRect(buf, 3, 9, 28, 9, DH.shadow);
 
-  // 闸顶中央的吊环(锈色)
-  stampDot(buf, 16, 12.5, 1.8, DH.rust);
-  stampDot(buf, 16, 12.5, 0.9, DH.gateHi);
-  // 吊索(两道竖线)
-  stampLine(buf, 13.5, 14, 13.5, 18, DH.shadow, 0.7);
-  stampLine(buf, 18.5, 14, 18.5, 18, DH.shadow, 0.7);
+  // 1.2 吊环 + 吊索(横梁中央)
+  stampDot(buf, 16, 2.5, 1.6, DH.rust);
+  stampDot(buf, 16, 2.5, 0.8, DH.gateHi);
+  stampLine(buf, 13.5, 4, 13.5, 9, DH.shadow, 0.7);
+  stampLine(buf, 18.5, 4, 18.5, 9, DH.shadow, 0.7);
 
-  // 横梁上的门钉
+  // 1.3 横梁门钉
   for (let i = 0; i < 3; i++) {
     const x = 6 + i * 9;
-    stampDot(buf, x, 16, 0.8, DH.rust);
+    stampDot(buf, x, 6, 0.8, DH.rust);
   }
 
-  /* 2. 闸墩(立柱,y=18..28) */
-  stampRect(buf, 3, 18, 9, 28, DH.gate);
-  stampRect(buf, 22, 18, 28, 28, DH.gate);
+  // 1.4 闸墩(立柱,y=9..18)
+  stampRect(buf, 3, 9, 9, 18, DH.gate);
+  stampRect(buf, 22, 9, 28, 18, DH.gate);
   // 立柱高光(左亮右暗,模拟侧光)
-  stampRect(buf, 3, 18, 4, 28, DH.gateHi);
-  stampRect(buf, 27, 18, 28, 28, DH.shadow);
+  stampRect(buf, 3, 9, 4, 18, DH.gateHi);
+  stampRect(buf, 27, 9, 28, 18, DH.shadow);
   // 立柱门钉
-  stampDot(buf, 6.5, 21, 1.0, DH.rust);
-  stampDot(buf, 6.5, 24, 1.0, DH.rust);
-  stampDot(buf, 25.5, 21, 1.0, DH.rust);
-  stampDot(buf, 25.5, 24, 1.0, DH.rust);
+  stampDot(buf, 6.5, 12, 1.0, DH.rust);
+  stampDot(buf, 6.5, 15, 1.0, DH.rust);
+  stampDot(buf, 25.5, 12, 1.0, DH.rust);
+  stampDot(buf, 25.5, 15, 1.0, DH.rust);
 
-  /* 3. 闸口(y=18..27,x=9..22,深色矩形) */
-  stampRect(buf, 9, 18, 22, 27, DH.shadow);
-  // 闸口底边一道亮水光(刚涌出来的水在反光)
+  // 1.5 闸口(y=9..18,x=9..22,深色矩形) + 底边一道亮水光
+  stampRect(buf, 9, 9, 22, 18, DH.shadow);
+  // 闸口底边(刚涌出来的水在反光)
   stampRect(buf, 10, 18, 21, 18, DH.body);
   stampRect(buf, 11, 18, 20, 18, DH.core);
 
-  /* 4. 中央水柱(正前一道,最粗最高) */
-  // 主水柱从闸口底 y=18 冲到 y=3
+  /* 2. 主浪:从闸口底 y=18 朝画面下方铺到 y=29。
+   *    矩形主体(同 UnderworldWave 推进段),用 fillRect 一层一层堆:
+   *    底色 + 顶面反光 + 上下边 + 波前 + 浪花。
+   *    方向:**朝下** —— 关键纠偏点。
+   */
+
+  // 2.1 浪体实体(底色)
+  stampRect(buf, 9, 19, 22, 29, DH.body);
+
+  // 2.2 顶面反光带(浪体最上沿 1~2 行,让水面读出"流")
+  stampRect(buf, 9, 19, 22, 20, DH.core);
+  stampRect(buf, 10, 19, 21, 19, DH.light);
+
+  // 2.3 两侧高光 / 暗线(让矩形像水)
+  stampRect(buf, 9, 19, 9, 29, DH.core);
+  stampRect(buf, 22, 19, 22, 29, DH.shadow);
+
+  // 2.4 水流中段的"水纹" —— 几道短横线,给水面读出"流动感"
+  //    沿 y 方向每两行一条,长度短一点表示"波纹"
+  stampLine(buf, 11, 22, 20, 22, DH.light, 0.6);
+  stampLine(buf, 11, 25, 20, 25, DH.light, 0.6);
+  stampLine(buf, 12, 24, 19, 24, DH.core, 0.5);
+  stampLine(buf, 12, 27, 19, 27, DH.core, 0.5);
+
+  // 2.5 **波前**(y=29 那一道亮 capstone)—— UnderworldWave 的核心信号
+  stampRect(buf, 9, 29, 22, 29, DH.light);
+  stampRect(buf, 9, 28, 22, 28, DH.core);
+  // 波前中央一颗更亮的水珠(浪尖)
+  stampDot(buf, 15.5, 30.5, 0.8, DH.foam);
+
+  // 2.6 **浪花** —— 波前下方(更靠画面下沿)一对泪滴,模拟水头拍出的小浪
+  //    位置:略低于 y=29,左右各一
   stampTri(
     buf,
-    [12, 18],
-    [20, 18],
-    [16, 3],
-    DH.body,
+    [11, 30],
+    [13, 30],
+    [12, 30.6],
+    DH.foam,
     80,
   );
-  // 主水柱的亮带
   stampTri(
     buf,
-    [13.5, 18],
-    [15.5, 18],
-    [16, 5],
-    DH.core,
-    60,
+    [18, 30],
+    [20, 30],
+    [19, 30.6],
+    DH.foam,
+    80,
   );
-  // 主水柱高光
-  stampTri(
-    buf,
-    [14.2, 18],
-    [14.8, 18],
-    [16, 7],
-    DH.light,
-    60,
-  );
-  // 主浪顶端的水珠(白色浪花)
-  stampDot(buf, 16, 3, 1.6, DH.foam);
-  stampDot(buf, 16, 4.5, 0.7, DH.light);
+  // 浪花碎点
+  stampDot(buf, 14, 30.4, 0.6, DH.light);
+  stampDot(buf, 17, 30.4, 0.6, DH.light);
+  stampDot(buf, 15.5, 30.9, 0.5, DH.foam);
 
-  /* 5. 左侧水流(向左上抛) */
-  stampTri(
-    buf,
-    [9, 18],
-    [12, 18],
-    [3, 7],
-    DH.body,
-    70,
-  );
-  stampTri(
-    buf,
-    [9.5, 18],
-    [11, 18],
-    [4, 8.5],
-    DH.core,
-    50,
-  );
-  stampDot(buf, 3, 7, 1.3, DH.foam);
-  stampDot(buf, 4.5, 9, 0.6, DH.light);
-
-  /* 6. 右侧水流(向右上抛,对称) */
-  stampTri(
-    buf,
-    [20, 18],
-    [23, 18],
-    [29, 7],
-    DH.body,
-    70,
-  );
-  stampTri(
-    buf,
-    [21, 18],
-    [22.5, 18],
-    [28, 8.5],
-    DH.core,
-    50,
-  );
-  stampDot(buf, 29, 7, 1.3, DH.foam);
-  stampDot(buf, 27.5, 9, 0.6, DH.light);
-
-  /* 7. 水花溅点 */
-  // 主浪腰两侧
-  stampDot(buf, 12, 13, 0.9, DH.light);
-  stampDot(buf, 20, 13, 0.9, DH.light);
-  stampDot(buf, 14, 10, 0.7, DH.foam);
-  stampDot(buf, 18, 10, 0.7, DH.foam);
-  // 闸口附近小水珠
-  stampDot(buf, 10, 22, 0.7, DH.foam);
-  stampDot(buf, 22, 22, 0.7, DH.foam);
-  stampDot(buf, 8, 21, 0.6, DH.core);
-  stampDot(buf, 24, 21, 0.6, DH.core);
-
-  /* 8. 立柱基脚的水洼(底下一道横水痕) */
-  stampRect(buf, 3, 28, 28, 29, DH.body);
-  // 水洼里的反光
-  stampRect(buf, 11, 28, 14, 28, DH.light);
-  stampRect(buf, 18, 28, 22, 28, DH.light);
+  // 2.7 闸口两侧的溅起小水珠(从闸口外侧 y=20 处甩出来,模拟水从口里蹦出)
+  stampDot(buf, 8, 20, 0.6, DH.foam);
+  stampDot(buf, 23, 20, 0.6, DH.foam);
+  stampDot(buf, 7, 22, 0.5, DH.core);
+  stampDot(buf, 24, 22, 0.5, DH.core);
 
   return buf;
 }
