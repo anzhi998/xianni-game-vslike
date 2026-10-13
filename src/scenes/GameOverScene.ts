@@ -100,28 +100,19 @@ export class GameOverScene extends Phaser.Scene {
 
     // 按钮
     //
-    // ⚠️ 尺寸与间距是按「手指」定的,不是按鼠标定的:手机横屏时整块画布被缩到
-    // 0.55 倍,50px 高的按钮落到屏幕上只有 27 个 CSS 像素,手指按不中。
-    // 而且原来两个按钮的中心相距 220、宽度正好 200 —— **它们是贴在一起的**,
-    // 想「再来一局」很容易点成「回主菜单」,而后者会丢掉这一局。
+    // ⚠️ 尺寸是按「手指」定的,不是按鼠标定的:手机横屏时整块画布被缩到 0.55 倍,
+    // 50px 高的按钮落到屏幕上只有 27 个 CSS 像素,手指按不中。
+    //
+    // 「再来一局」暂时移除 —— 它会在重进 GameScene 时偶发卡死(且卡死后暂停菜单
+    // 也点不动),根因未定位,先只留一个安全的出口。恢复时按原样加回即可:
+    // restart.on('pointerdown') → scene.stop('UIScene') + scene.start('GameScene'),
+    // 并把下面这颗居中按钮改回「两按钮 + 30px 间距」的并排布局。
     const btnY = h - 110;
     const btnW = 260;
     const btnH = 76;
-    const btnGap = 30;
-    const restartX = w / 2 - (btnW + btnGap) / 2;
-    const menuX = w / 2 + (btnW + btnGap) / 2;
 
-    const restart = this.add.rectangle(restartX, btnY, btnW, btnH, 0x4a4a8a).setStrokeStyle(2, 0x6a6aff).setInteractive({ useHandCursor: true });
-    this.add.text(restartX, btnY, '再来一局', { fontFamily: 'monospace', fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
-    restart.on('pointerover', () => restart.setFillStyle(0x6a6aff));
-    restart.on('pointerout', () => restart.setFillStyle(0x4a4a8a));
-    restart.on('pointerdown', () => {
-      this.scene.stop('UIScene');
-      this.scene.start('GameScene');
-    });
-
-    const menu = this.add.rectangle(menuX, btnY, btnW, btnH, 0x6a4a2a).setStrokeStyle(2, 0xffaa44).setInteractive({ useHandCursor: true });
-    this.add.text(menuX, btnY, '回主菜单', { fontFamily: 'monospace', fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
+    const menu = this.add.rectangle(w / 2, btnY, btnW, btnH, 0x6a4a2a).setStrokeStyle(2, 0xffaa44).setInteractive({ useHandCursor: true });
+    this.add.text(w / 2, btnY, '回主菜单', { fontFamily: 'monospace', fontSize: '22px', color: '#ffffff' }).setOrigin(0.5);
     menu.on('pointerover', () => menu.setFillStyle(0x8a6a4a));
     menu.on('pointerout', () => menu.setFillStyle(0x6a4a2a));
     menu.on('pointerdown', () => {
