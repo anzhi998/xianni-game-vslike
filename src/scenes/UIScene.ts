@@ -660,6 +660,10 @@ export class UIScene extends Phaser.Scene {
         `冷却 ×${gameStats.relicSystem.getCooldownMul().toFixed(2)}`,
         `移速 ×${m.moveSpeedMul.toFixed(2)}`,
         `拾取 +${Math.round((m.pickupMul - 1) * 100)}%`,
+        // ⚠️ 回血读的是 **player.healthRegen**(已经合流过的那一个),不是 m.healthRegen ——
+        // 「生生诀」那类悟道卡的回血不在遗物 mods 里,读 m 会漏掉它,
+        // 玩家抽到卡后回到这里看不到任何变化,又变成一次「系统是不是坏了」。
+        `每秒回血 ${gameStats.player?.healthRegen ?? 0}`,
       ].join('   ');
       // ⚠️ 必须进容器 c:hidePauseOverlay 只销毁容器,散落在场景里的
       // 文本不会跟着走 —— 暂停面板关掉了,属性行却永远留在 HUD 上

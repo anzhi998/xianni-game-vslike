@@ -90,6 +90,17 @@ export interface UpgradeContext {
   damageAllEnemies: (amount: number) => void;
   /** 灵石袋 */
   addCoins: (amount: number) => void;
+  /**
+   * 永久提高每秒回血(生生诀)。可重复叠加。
+   *
+   * ⚠️ **为什么不能直接改 `player.healthRegen`**:那个字段是 `syncPlayerStats()`
+   *    每次重算都整套**覆盖**的派生值(基础 × 境界 × 遗物),而 `applyUpgrade()`
+   *    在 `upgrade.apply()` 之后紧跟一次 `syncPlayerStats()` —— 卡里写进去的数
+   *    当场就被抹掉。症状是「这一级卡面看起来生效了,下一级升完回血又变回 0」,
+   *    只在升了第二次之后才看得出来。加在 GameScene 自己的累加器上,
+   *    它才活得比一次重算长(遗物那一路本来就走 `mods.healthRegen`)。
+   */
+  addHealthRegen: (amount: number) => void;
   /** 玩家当前等级。消耗品(清屏符)按它缩放 */
   level: number;
 }

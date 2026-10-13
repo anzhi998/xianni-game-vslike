@@ -113,6 +113,18 @@ export class GameScene extends Phaser.Scene {
    * 一笔账都不多记、也不少记。
    */
   private xpCarry = 0;
+  /**
+   * 悟道卡「生生诀」攒下的每秒回血(可重复叠加)。
+   *
+   * ⚠️ **不能直接写 `player.healthRegen`**:那是 `syncPlayerStats()` 每次重算
+   *    都整套覆盖的派生值,而 `applyUpgrade()` 结算完卡紧跟一次重算 ——
+   *    写进去当场被抹掉,症状是「这次升完感觉有回血,下次升完又没了」。
+   *    所以卡只往这里加,由 `syncPlayerStats()` 与遗物那一路的
+   *    `mods.healthRegen` **相加**后一起写进玩家。
+   * ⚠️ 它必须在 `create()` 里清零(见 create 的状态重置段):场景 stop→start
+   *    复用同一个 GameScene 实例,实例字段不会自己回到初值。
+   */
+  private insightHealthRegen = 0;
   /** 当前地图 */
   public map: MapDef = getMap(DEFAULT_MAP_ID);
   /** 是否已经结算过死亡 */
@@ -160,6 +172,7 @@ export class GameScene extends Phaser.Scene {
     this.kills = 0;
     this.coins = 0;
     this.xpCarry = 0;
+    this.insightHealthRegen = 0;
     this.deathHandled = false;
 
     this.cameras.main.setBackgroundColor('#1a0f0c');
@@ -533,7 +546,9 @@ export class GameScene extends Phaser.Scene {
     }
     p.moveSpeedMul = mods.moveSpeedMul;
     p.pickupMul = mods.pickupMul;
-    p.healthRegen = mods.healthRegen;
+    // 回血有两个来源:遗物(mods,随装备生灭)与悟道卡生生诀(insightHealthRegen,
+    // 一局内只增不减)。这里相加是**唯一**把两者合流的地方 —— 见字段注释。
+    p.healthRegen = mods.healthRegen + this.insightHealthRegen;
   }
 
   private setupCollisions(): void {
@@ -1308,6 +1323,8 @@ export class GameScene extends Phaser.Scene {
       relicSystem: this.relicSystem,
       damageAllEnemies: (amount: number) => this.damageAllEnemies(amount),
       addCoins: (amount: number) => this.addCoins(amount),
+      // 只累加,不直接改 player —— 下面这行的 syncPlayerStats() 会把派生值整套重算
+      addHealthRegen: (amount: number) => { this.insightHealthRegen += amount; },
       level: this.xpSystem.level,
     });
     this.syncPlayerStats();
