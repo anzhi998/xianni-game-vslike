@@ -815,26 +815,39 @@ export const SPELLS: Record<string, SpellDef> = {
     form: 'drop', aim: 'facing', texture: 'proj_ice_spike', color: 0x59d9a0,
     keyRelic: 'zunhunfan',
     levels: [
-      // ⚠️ 冷却 2.00 → 1.60 线性压档;爆炸半径 0.6 → 0.8 随级递进(上一版的 75%,
-      //    递进规则不变:1→2 不变,3 +0.05,4 不变,5 +0.05,6 +0.05,7 不变,8 +0.05)。
+      // ⚠️ 冷却 2.00 → 1.60 线性压档;爆炸半径随级递进(递进规则:
+      //    1→2 不变,3 +0.05,4 不变,5 +0.05,6 +0.05,7 不变,8 +0.05)。
       //    道数节点与全表对齐:机制放 3 / 5 级(2 道 / 3 道 + 冰缓),8 级只抬数值。
+      //
+      // ⚠️ **半径列整体上调过一轮**(用户口径「范围太小,扩大一点」):
+      //    0.6 / 0.65 / 0.7 / 0.75 / 0.8 → **0.8 / 0.85 / 0.9 / 0.95 / 1.0**。
+      //    为什么这一档恰好落在「刚好越过间距」上:道距固定 1.6 格,而炸圈
+      //    **直径 = 半径 × 2** —— 旧值满级 0.8 格时直径正好 1.6 格,三个圈在
+      //    边界处**相切**,画面上是三个互不相干的孤立小点;新的 1.0 格让直径
+      //    2.0 格 > 间距 1.6 格,相邻圈开始咬边,「一串炸点」才读得成一条压过去的线。
+      //    低等级的递进一并保留,于是「越升级,这串圈越连成串」本身成了成长感的一部分。
+      //
+      //    ⚠️ 咬边**不会**变成单体伤害翻倍:去重表建在**本次施放**上
+      //    (见 `IceSpikeDrop.burst`),同一只怪一次施放只结算 1 道 ——
+      //    所以这次改动**只加宽覆盖面,不动配表口径**(群伤仍 4 × 40 ÷ 1.60 = 100,
+      //    单怪仍只吃 1 道)。改半径前必须先确认这条去重还在,否则是把口径打爆。
       { damage: 16, cooldown: 2.00, count: 1, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.6, dropGapGrid: 1.6, impactDelayMs: 400 },
+        dropRadiusGrid: 0.8, dropGapGrid: 1.6, impactDelayMs: 400 },
       { damage: 20, cooldown: 1.95, count: 1, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.6, dropGapGrid: 1.6, impactDelayMs: 400 },
+        dropRadiusGrid: 0.8, dropGapGrid: 1.6, impactDelayMs: 400 },
       { damage: 22, cooldown: 1.90, count: 2, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.65, dropGapGrid: 1.6, impactDelayMs: 400, note: '冰锥增至 2 道' },
+        dropRadiusGrid: 0.85, dropGapGrid: 1.6, impactDelayMs: 400, note: '冰锥增至 2 道' },
       { damage: 26, cooldown: 1.85, count: 2, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.65, dropGapGrid: 1.6, impactDelayMs: 400 },
+        dropRadiusGrid: 0.85, dropGapGrid: 1.6, impactDelayMs: 400 },
       { damage: 28, cooldown: 1.80, count: 3, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.7, dropGapGrid: 1.6, impactDelayMs: 400,
+        dropRadiusGrid: 0.9, dropGapGrid: 1.6, impactDelayMs: 400,
         slowMul: 0.20, slowMs: 1500, note: '冰锥增至 3 道,命中附带冰缓' },
       { damage: 32, cooldown: 1.75, count: 3, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.75, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
+        dropRadiusGrid: 0.95, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
       { damage: 36, cooldown: 1.70, count: 3, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.75, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
+        dropRadiusGrid: 0.95, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
       { damage: 40, cooldown: 1.60, count: 3, pierce: 0, area: 1, speed: 0,
-        dropRadiusGrid: 0.8, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
+        dropRadiusGrid: 1.0, dropGapGrid: 1.6, impactDelayMs: 400, slowMul: 0.20, slowMs: 1500 },
     ],
   },
 
