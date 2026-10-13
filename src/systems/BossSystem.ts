@@ -65,6 +65,8 @@ interface BossTimers {
   fateAt: number;
   blinkAt: number;
   summonAt: number;
+  /** 杀戮仙诀遮罩的下一次张开时刻 */
+  shieldAt: number;
   /**
    * 剑域的伤害 tick 截止时刻。**过期的**时候才结算一次,而不是每帧结算 ——
    * 每帧扣 1/60 的话伤害数字会变成刷屏的杂讯,且玩家读不出「我在被烧」。
@@ -181,7 +183,8 @@ export class BossSystem {
       t = {
         fanAt: now + 1200, novaAt: now + 2400, rainAt: now + 2600,
         fingerAt: now + 3600, fateAt: now + 3400, blinkAt: now + 2200,
-        summonAt: now + 4000, domainTickAt: 0, domainRadius: 0, domainOn: false,
+        summonAt: now + 4000, shieldAt: now + 8000,
+        domainTickAt: 0, domainRadius: 0, domainOn: false,
         windupUntil: 0, pendingKind: '',
       };
       this.timers.set(enemy, t);
@@ -219,6 +222,14 @@ export class BossSystem {
     if (p.blink && now >= t.blinkAt) {
       this.castBlink(enemy, p.blink, now);
       t.blinkAt = now + p.blink.intervalMs / p.tempo;
+    }
+    // 杀戮仙诀:到点即发,不叠前摇 —— 它的「预告」就是罩子亮起来本身。
+    // 而那是**保护**不是威胁,再给 320ms 蓄力光只会让玩家以为它要放大招。
+    if (p.shield && now >= t.shieldAt) {
+      this.castShield(enemy, p.shield, now);
+      // ⚠️ 这里的间隔**不除 tempo** —— 免伤窗口占的是一局总 DPS 的固定比例,
+      //    跟着狂暴一起缩短会把它从「节奏题」压成「数值墙」(见 BossShieldDef)
+      t.shieldAt = now + p.shield.intervalMs;
     }
     if (p.finger && now >= t.fingerAt) {
       this.castFinger(p.finger);
@@ -305,6 +316,7 @@ export class BossSystem {
     if (p.finger) next = Math.min(next, t.fingerAt);
     if (p.fate) next = Math.min(next, t.fateAt);
     if (p.blink) next = Math.min(next, t.blinkAt);
+    if (p.shield) next = Math.min(next, t.shieldAt);
     if (p.summon) next = Math.min(next, t.summonAt);
     return next;
   }
@@ -362,6 +374,35 @@ export class BossSystem {
       return { on: false, radius: 0, x: 0, y: 0 };
     }
     return { on: true, radius: t.domainRadius, x: e.x, y: e.y };
+  }
+
+  /**
+   * 杀戮仙诀 —— 四方符印护体(白色符阵),期间本体完全免伤。
+   *
+   * ⚠️ 免伤**不在这里自己记表**,而是写进实体的 `invulnerableUntil`:
+   *    伤害入口只有 `Enemy.takeDamage` 一个,所有攻击形态(弹体、地面区域、
+   *    弧带、环绕、连锁)自然全部尊重它 —— 与闪现同一套做法。
+   *    `shieldUntil` 是**另一条**通道,只喂表现层(符印+白化)。
+   *
+   * 用 max 而不是直接赋值:闪现的无敌(1–1.5s)可能刚好落在罩子期间,
+   * 直接覆盖会把 5 秒的罩子缩成闪现剩下的那点时间。
+   */
+  private castShield(enemy: Enemy, s: NonNullable<BossPhaseDef['shield']>, now: number): void {
+    const until = now + s.durationMs;
+    enemy.shieldUntil = until;
+    enemy.shieldRadius = s.radius;
+    enemy.invulnerableUntil = Math.max(enemy.invulnerableUntil, until);
+  }
+
+  /**
+   * 供表现层读取的遮罩状态。GameScene 的 updateBossShield 每帧拉 ——
+   * 与 domainState 同一口径:系统说「罩子还亮着、多大」,画成什么样由表现层定。
+   */
+  shieldState(): { on: boolean; radius: number; x: number; y: number; until: number } {
+    const e = this.current;
+    if (!e || !e.active || e.isDead) return { on: false, radius: 0, x: 0, y: 0, until: 0 };
+    const on = this.scene.time.now < e.shieldUntil;
+    return { on, radius: e.shieldRadius, x: e.x, y: e.y, until: e.shieldUntil };
   }
 
   private phaseOf(def: BossDef, hpRatio: number): BossPhaseDef {

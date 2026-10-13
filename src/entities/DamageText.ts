@@ -13,6 +13,13 @@ export const COLOR_NORMAL = '#ffffff';
 export const COLOR_CRIT = '#ffd166';
 /** 被护甲减伤:冷调且比常态略暗,读作「这一下被削了」而不是「这一下更强」 */
 export const COLOR_ARMORED = '#7fa8c9';
+/**
+ * 免伤(杀戮仙诀白罩 / 闪现无敌):与白罩同一族的冷白。
+ *
+ * 它出现的场景是「怎么打都不掉血」,所以文案是「免疫」而不是数字 ——
+ * 详见 DamageTextOpts.text。
+ */
+export const COLOR_IMMUNE = '#dff2ff';
 
 /**
  * 飘字的显示档位。
@@ -34,6 +41,14 @@ export interface DamageTextOpts {
   armored?: boolean;
   /** 直接指定颜色,盖掉上面两档 */
   color?: string;
+  /**
+   * 直接指定文案,盖掉数字。
+   *
+   * 只有「免疫」用它 —— 那一档要表达的恰恰是「没有数字」这件事,
+   * 而把 0 画出来会被读成「这一发打了 0 伤害」,那是另一回事(打不穿护甲
+   * 已经在蓝字里说过一次了)。
+   */
+  text?: string;
 }
 
 export class DamageText extends Phaser.GameObjects.Text {
@@ -68,7 +83,7 @@ export class DamageText extends Phaser.GameObjects.Text {
   setup(x: number, y: number, value: number, opts: DamageTextOpts = {}): void {
     const crit = opts.crit ?? false;
     this.setPosition(x, y);
-    this.setText(String(value));
+    this.setText(opts.text ?? String(value));
     this.setColor(opts.color ?? (opts.armored ? COLOR_ARMORED : crit ? COLOR_CRIT : COLOR_NORMAL));
     this.setFontSize(crit ? 20 : 14);
     this.setActive(true).setVisible(true);

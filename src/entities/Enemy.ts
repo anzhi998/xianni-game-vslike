@@ -101,6 +101,18 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   public bossCastKind = '';
   /** 无敌截止时刻(ms)。天运子「闪现」用它 —— 伤害只有 takeDamage 一个入口 */
   public invulnerableUntil = 0;
+  /**
+   * 杀戮仙诀遮罩的截止时刻(ms)。0 = 没罩子。
+   *
+   * 与 `invulnerableUntil` **分开存**而不是合并:两者虽然都让伤害无效,
+   * 但表现完全不同(白罩+白化 vs 一层冰蓝闪现色),而且规则也不同 ——
+   * 遮罩是「打本体没用」的长窗口,闪现是「刚落地」的短瞬间。
+   * 混用一个字段的话,闪现的 1 秒会顺手点亮一整片白罩,玩家会以为杀诀
+   * 只放了 1 秒。免伤仍然只由 `invulnerableUntil` 把关(见 takeDamage)。
+   */
+  public shieldUntil = 0;
+  /** 遮罩的视觉半径(px)。由 BossSystem 按阶段写入,渲染层照它缩放贴图 */
+  public shieldRadius = 0;
   /** 是否已被天运子「命数」镀金。每只只镀一次,压力靠轮次累积而不是叠倍率 */
   public fateBuffed = false;
 
@@ -279,6 +291,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.bossCastFlashUntil = 0;
     this.bossCastKind = '';
     this.invulnerableUntil = 0;
+    this.shieldUntil = 0;
+    this.shieldRadius = 0;
     this.fateBuffed = false;
 
     this.chargeState = 'approach';
@@ -493,6 +507,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     } else if (this.possessed) {
       // 被附身:常驻一层青紫,让「必须先点掉的那一只」在一堆怪里认得出来
       this.setTint(0xcc88ff);
+    } else if (time < this.shieldUntil) {
+      // 杀戮仙诀:罩子亮着时本体压一层冷白。
+      // 用**常亮**而不是闪烁 —— 闪烁在这个项目里是「要出招了」的语言(见上一支),
+      // 而这一支要说的恰好相反:「这 5 秒你打不动我」。白色也与受击的
+      // setTintFill 白闪区分得开(那个是满白填充,这个是着色)。
+      this.setTint(0xdff2ff);
     } else if (time < this.invulnerableUntil) {
       // 闪现无敌:一层冰蓝,读作「现在打它没用,先走」
       this.setTint(0x99eeff);

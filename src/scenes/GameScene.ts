@@ -15,7 +15,7 @@ import { Barrier } from '../entities/attacks/Barrier';
 import { FireVent } from '../entities/Hazards/FireVent';
 import { FingerOfFate } from '../entities/Hazards/FingerOfFate';
 import { MeteorFall } from '../entities/Hazards/MeteorFall';
-import { DamageText } from '../entities/DamageText';
+import { DamageText, COLOR_IMMUNE } from '../entities/DamageText';
 import type { DamageTextOpts } from '../entities/DamageText';
 import { InputManager } from '../utils/InputManager';
 import { WeaponSystem } from '../systems/WeaponSystem';
@@ -36,7 +36,7 @@ import type { MapDef } from '../config/MapConfig';
 import { SPELLS, BASE_SPELL_IDS, STARTING_SPELL, MAX_SPELL_SLOTS, resolveSpell,
   validateSpellReachability, validateEvolutionLinks, validateSpellKeys } from '../config/SpellConfig';
 import { RELICS, RELIC_IDS, POOL_RELIC_IDS, RELIC_SLOTS, validateRelicReachability } from '../config/RelicConfig';
-import { BOSSES, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
+import { BOSSES, SIGIL_TEXTURE_RADIUS, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
 import { validateBossSchedule } from '../config/BossConfig';
 import { EVOLUTIONS, findEvolution } from '../config/EvolutionConfig';
 import { HEAL_PILL_FRACTION, XP_PILL_FRACTION } from '../config/EliteConfig';
@@ -129,6 +129,15 @@ export class GameScene extends Phaser.Scene {
    * 没有首领时 setVisible(false) 即可。
    */
   private bossDomain?: Phaser.GameObjects.Image;
+  /**
+   * 杀戮仙诀的四方符印(东/南/西/北各一枚,悬在首领身边的环绕半径上)。
+   * 与剑域同构(常驻实例、每帧跟随首领),但层级相反 ——
+   * 剑域是**地**,符印是**护体的阵**,画在首领之上,
+   * 否则它会变成「脚下又一个圈」,读不出「打不进去」。
+   */
+  private bossSigils: Phaser.GameObjects.Image[] = [];
+  /** 白罩张开的时刻。用于入场淡入 —— 只有截止时刻是算不出「刚张开」的 */
+  private shieldStartedAt = 0;
   /** 上一次见过的前摇结束时刻。与前一个值比对即可拿到「刚进入前摇」的上升沿 */
   private lastCastSeen = 0;
   private veilAlpha = 0;
@@ -608,6 +617,7 @@ export class GameScene extends Phaser.Scene {
     // 首领的脚下场所(剑阵/法域)。放在 bossSystem.update 之后 ——
     // 它读的是「这一帧首领在哪」,早一步读到的就是上一帧的位置
     this.updateBossDomain(time);
+    this.updateBossShield(time);
     this.updateBossCastFx();
 
     if (this.player.isDead()) this.onPlayerDeath();
@@ -670,6 +680,21 @@ export class GameScene extends Phaser.Scene {
   ): boolean {
     if (!enemy.active || enemy.isDead) return false;
     const now = this.time.now;
+
+    // 免伤窗口:杀戮仙诀的白罩,或闪现落地的无敌。
+    //
+    // ⚠️ 必须在这里**提前 return**:`takeDamage` 会静默吞掉伤害,但下面那行
+    //    spawnDamageText 不看它 —— 照常走完的话,罩子里会飞出 5 秒的满额伤害数字,
+    //    玩家会以为自己正在输出。飘字是这一局里唯一的伤害读数,它可以少,
+    //    但不能假。免伤期间改为飘一个「免疫」,并**限频**(每 450ms 一次)——
+    //    火海/弧带每帧都在打,不限频会刷成一堵字墙。
+    if (now < enemy.invulnerableUntil) {
+      if (now - this.lastImmuneTextAt > 450) {
+        this.lastImmuneTextAt = now;
+        this.spawnDamageText(enemy.x, enemy.y - 10, 0, { text: '免疫', color: COLOR_IMMUNE });
+      }
+      return false;
+    }
     const mods = this.relicSystem.getPlayerMods();
 
     // 护甲减免。armorPen 来自破魔/破防,是这两条遗物与进化的唯一落点
@@ -1803,6 +1828,58 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * 杀戮仙诀的表现层:四方符印护体。
+   *
+   * 参考图(仙侠剧护体符阵)的口径 —— 不是一整块玻璃罩,而是**四枚白色
+   * 半透明圆形符印**悬在首领身边四个方位:
+   *   - 阵整体绕首领缓慢公转(四个方位是活的,不是钉死的十字);
+   *   - 每枚符印各自自转,相邻两枚方向相反(顺/逆),阵纹才读得出「在运功」;
+   *   - alpha 曲线与大罩时代相同:0–180ms 淡入 → 稳定 → 最后 900ms 脉动,
+   *     让「免伤还剩多久」是**看得见**的,玩家才知道什么时候可以再开火。
+   */
+  private updateBossShield(time: number): void {
+    const st = this.bossSystem.shieldState();
+    if (!st.on) {
+      for (const s of this.bossSigils) s.setVisible(false);
+      this.shieldStartedAt = 0;
+      return;
+    }
+    if (this.bossSigils.length === 0) {
+      for (let i = 0; i < 4; i++) {
+        const s = this.add.image(0, 0, 'fx_sigil');
+        s.setDepth(54);
+        s.setBlendMode(Phaser.BlendModes.ADD);
+        this.bossSigils.push(s);
+      }
+    }
+    if (this.shieldStartedAt === 0) this.shieldStartedAt = time;
+
+    // 阵的公转:约 9 秒一圈 —— 慢到能看清纹样,快到知道它活着
+    const orbit = time * 0.0007;
+    // 每枚符印的自转:相邻反向(0/2 顺,1/3 逆),视觉上才不是同一张贴图转四份
+    for (let i = 0; i < 4; i++) {
+      const s = this.bossSigils[i];
+      const a = orbit + (i * Math.PI) / 2;
+      s.setVisible(true);
+      s.setPosition(st.x + Math.cos(a) * st.radius, st.y + Math.sin(a) * st.radius);
+      // 与剑域同一套规矩:贴图的内容半径对不上就会大小失真(这里只影响观感)
+      s.setScale(st.radius / SIGIL_TEXTURE_RADIUS / 2);
+      s.rotation += i % 2 === 0 ? 0.005 : -0.005;
+    }
+
+    const age = time - this.shieldStartedAt;
+    const left = st.until - time;
+    let alpha = 0.75;
+    if (age < 180) {
+      alpha *= age / 180;
+    } else if (left < 900) {
+      // 脉动: 0.5 ± 0.5 → 0.55~1.0 的呼吸
+      alpha *= 0.55 + 0.45 * (Math.sin(time / 90) * 0.5 + 0.5);
+    }
+    for (const s of this.bossSigils) s.setAlpha(alpha);
+  }
+
+  /**
    * 剑域的一次伤害 tick。
    *
    * ⚠️ **绕开 `damagePlayer` 的 600ms 无敌帧,但保留无敌帧本身。**
@@ -1955,6 +2032,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private lastLifestealAt = -9999;
+  /** 上一次飘「免疫」的时刻。免伤窗口里每一次命中都飘会刷成字墙 */
+  private lastImmuneTextAt = -9999;
 
   private spawnDamageText(x: number, y: number, value: number, opts: DamageTextOpts = {}): void {
     const t = this.damageTextPool.get() as DamageText;

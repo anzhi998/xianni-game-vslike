@@ -213,6 +213,8 @@ export interface BossPhaseDef {
   fate?: BossFateDef;
   /** 无敌闪现 */
   blink?: BossBlinkDef;
+  /** 杀戮仙诀:四方符印护体,期间完全免伤(radius = 符印环绕半径) */
+  shield?: BossShieldDef;
   /** 剑域:脚下常驻的持续伤害领域 */
   domain?: BossDomainDef;
   /** 召唤剑肖十二子 */
@@ -304,6 +306,36 @@ const TIANYUNZI_FINGER_COLOR = 0xd8b860;
 export const METEOR_COLOR = 0xcc33cc;
 
 /**
+ * 杀戮仙决 —— 天运子周身张开的一层白色半透明仙力遮罩。
+ *
+ * ## 它为什么可以「完全免伤」而不显得耍赖
+ *
+ * 这招把 5 秒的**纯免伤窗口**摊在明处:罩子亮着的时候,打本体是零收益。
+ * 于是它其实是**一道指路题**,而不是一道扣血题 —— 玩家在窗口里该做的是
+ * 转向场上的怪堆(命数镀过金的那几只),把火力还回去,而不是继续对着罩子
+ * 空放。这与天运子「考清点意识」的定位是同一件事的第二次表达:
+ * 命数让你**先打谁**,杀诀让你**先不打谁**。
+ *
+ * 三个数字都是刻意的:
+ *   - 5 秒:短于一次「清掉两只镀金怪」的时间,窗口内打得完,所以不是白等;
+ *   - 15 秒:免伤占比 1/3。再短会让整场 DPS 变成随机数,再长则等于没有这招;
+ *   - 半径只决定**看起来多大**,判定是本体免疫 —— 「罩子罩住它」比
+ *     「罩子罩住一块地」更符合「仙力护体」的直觉,也不会产生「站在罩子里也安全」的误读。
+ *
+ * ⚠️ 遮罩间隔**不随 tempo 缩短**(BossSystem.castShield):免伤窗口占的是一局的总
+ *    DPS,不是出手频率。狂暴阶段若把间隔也按 1.3 倍压掉,三个阶段的
+ *    「免伤占比」就各不相同,配表上的 1/3 会变成一个越打越假的数。
+ */
+export interface BossShieldDef {
+  /** 遮罩从张开到消散的时长(毫秒)。这段时间内玩家伤害**完全无效** */
+  durationMs: number;
+  /** 两次之间的间隔(毫秒),从张开那一刻起算 */
+  intervalMs: number;
+  /** 遮罩半径(像素)。只决定视觉尺寸 —— 判定是本体的,与半径无关 */
+  radius: number;
+}
+
+/**
  * 剑域贴图(`fx_sworddomain`,160×160)画出来的**内容半径**。
  *
  * 贴图的外环画在距中心 72px 处,所以这张图「代表」一个半径 72 的圆。
@@ -314,6 +346,16 @@ export const METEOR_COLOR = 0xcc33cc;
  *    玩家会开始不信任何地面标记,连带火雨那套预警圈一起失去意义。
  */
 export const SWORD_DOMAIN_TEXTURE_RADIUS = 72;
+
+/**
+ * 杀戮仙诀符印贴图(`fx_sigil`,96×96)画出来的**内容半径**。
+ *
+ * 与 `SWORD_DOMAIN_TEXTURE_RADIUS` 同一套规矩:贴图把外环画在这个半径上,
+ * `GameScene.updateBossShield` 用它反算缩放。⚠️ 改贴图必须改这里 ——
+ * 但这张图与剑域有一处不同:它**不参与判定**(符印只表示本体免伤),
+ * 所以这个数字错了只是「不好看」,不会让玩家读到假的危险区。
+ */
+export const SIGIL_TEXTURE_RADIUS = 44;
 
 export const BOSSES: Record<string, BossDef> = {
 
@@ -386,7 +428,13 @@ export const BOSSES: Record<string, BossDef> = {
    *   命数 —— 周期性给随机小怪镀金(血/速/伤抬一档,每只仅一次),
    *           不优先点掉,整片怪堆会被一轮轮镀成铁板,拖得越久越难打
    *   闪现 —— 瞬移到玩家附近并短暂无敌,专门打断「站桩输出 Boss」的节奏
+   *   杀戮仙诀 —— 周身张开白色仙力遮罩,**5 秒内完全免伤**,15 秒一轮。
+   *           它不是「更硬的甲」,而是把「这 5 秒别打本体」写在脸上:
+   *           窗口里该把火力转向怪堆(尤其镀了金的那几只)。与命数互补 ——
+   *           一个决定先打谁,一个决定先不打谁。
    * 三阶段逐步收紧:命数点名更多、闪现更频、签文扇更密、落指从一根到三根。
+   * ⚠️ 杀戮仙诀是唯一**不随阶段变强**的一招(5s/15s 全程一样):免伤吃的是
+   *    总 DPS 的固定比例,跟着狂暴一起加会把它从「节奏题」变成「数值墙」。
    *
    * 血量 10000(写在 ENEMIES.tianyunzi):20:00 玩家单体 DPS 约 250–300,
    * 刨去闪现无敌的窗口,全程约 40 秒 —— 比朱雀略长是刻意的:
@@ -410,6 +458,7 @@ export const BOSSES: Record<string, BossDef> = {
         },
         fate: { count: 3, hpMul: 1.5, speedMul: 1.25, damageMul: 1.3, intervalMs: 6500 },
         blink: { intervalMs: 7000, invulnMs: 1000, minDist: 300, maxDist: 460 },
+        shield: { durationMs: 5000, intervalMs: 15000, radius: 84 },
       },
       {
         name: '命数·逆天', hpAbove: 0.3, speed: 72, tempo: 1,
@@ -421,6 +470,7 @@ export const BOSSES: Record<string, BossDef> = {
         },
         fate: { count: 5, hpMul: 1.5, speedMul: 1.25, damageMul: 1.3, intervalMs: 5500 },
         blink: { intervalMs: 5500, invulnMs: 1200, minDist: 280, maxDist: 440 },
+        shield: { durationMs: 5000, intervalMs: 15000, radius: 88 },
       },
       {
         name: '命数·无我', hpAbove: 0, speed: 84, tempo: 1.3,
@@ -432,6 +482,7 @@ export const BOSSES: Record<string, BossDef> = {
         },
         fate: { count: 7, hpMul: 1.6, speedMul: 1.3, damageMul: 1.35, intervalMs: 4500 },
         blink: { intervalMs: 4200, invulnMs: 1500, minDist: 260, maxDist: 420 },
+        shield: { durationMs: 5000, intervalMs: 15000, radius: 92 },
       },
     ],
   },
