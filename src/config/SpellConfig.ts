@@ -297,6 +297,22 @@ export interface ResolvedSpell {
 
   damage: number;
   cooldownMs: number;
+  /**
+   * 开火间隔的**下限**(ms)。0 = 没有下限。
+   *
+   * 只有环绕形态有值,且等于飞剑存活期。原因见 `jianzhen` 表头:
+   * 环绕形态的 `cooldown` 语义是「这一批剑活多久」而不是「多久放一发」,
+   * 一旦被冷却乘区压到存活期以下,就**会叠出第二批剑** —— 那是输出源
+   * 数量翻倍,和直线形态「多放几发弹」完全不是一个量级。
+   *
+   * 实测破口:天逆珠 5 级(×0.95⁵=×0.774)与定身术 5 级(攻速 +30%)叠加,
+   * `getCooldownMul()` = 0.595 —— 斩罗决 1.97s 压到 1.17s(存活 1.97s,
+   * 峰值 16 把剑);剑阵 8 级 3.20s 压到 1.90s(存活 3.20s,峰值 12 把)。
+   *
+   * ⚠️ 它**只约束环绕这一条时间线**。斩罗决的放射剑气另走 `burst.everyMs`
+   * (独立计时器),**照吃**冷却乘区 —— 见 `zhanluo` 表头。
+   */
+  cooldownFloorMs: number;
   count: number;
   pierce: number;
   area: number;
@@ -495,6 +511,17 @@ export const SPELLS: Record<string, SpellDef> = {
       //    因为飞剑的命中次数完全由「它活了几圈」决定 ——
       //    活 2 圈 + 每圈打一次 = 每只怪吃 2 次,活 1 圈就只有 1 次。
       //    `cooldown` 保持等于存活期,场上飞剑把数才恒定(不会叠成两倍,也不会断档)。
+      //    ⚠️ 但「配表里写相等」只做了一半 —— `WeaponSystem.update` 里间隔还要乘
+      //    冷却乘区(天逆珠 ×0.95^l ÷ 定身术攻速),满配叠起来是 ×0.595,于是
+      //    写好的相等关系当场被压破:斩罗决 1.97s → 1.17s(存活 1.97s,峰值
+      //    16 把剑)、剑阵 8 级 3.20s → 1.90s(存活 3.20s,峰值 12 把)。
+      //    所以环绕形态在 `resolveSpell` 里额外登记了 `cooldownFloorMs = 存活期`:
+      //    乘区只允许把间隔**拉长**,不许压破存活期。
+      //    代价要说清楚:天逆珠、定身术的**攻速**从此对**环绕那一半**零收益
+      //    (定身术的定身概率照常生效 —— 那条走命中判定,不走冷却)。
+      //    ⚠️ 但**只对环绕**。斩罗决的**放射剑气**是独立计时器,照吃这个乘区 ——
+      //    产品口径是「天逆珠该让斩罗决更凶,但不该让剑阵凭空多出一批剑」。
+      //    详见 `zhanluo` 表头。换来的是「叠冷却遗物 = 群伤峰值翻倍」这个洞被焊死。
       //    ⚠️ `visualScale` 在这里只改**外观**:飞剑没有物理体,命中判定走
       //    `Orbiter.hitRadius`(恒定 16px),不随 scale 变化。
       //    它解决的是「武器比目标还小」——10px 的原图比铁甲蚁(10px)、
@@ -508,6 +535,8 @@ export const SPELLS: Record<string, SpellDef> = {
       //    ⚠️ 半径**只改覆盖面,不改命中次数** —— `hitRadius`(恒定 16px)、
       //    `lifeLaps`、`orbitSpeed` 都没动,所以每只怪吃几下、DPS 怎么算全不变;
       //    变的是「能打到离自己多远的怪」:剑阵从此更贴身,远处确实更容易漏。
+      //    ⚠️ 改这张表**必须连进化形态 `zhanluo` 一起改**:它的环绕半径一直
+      //    等于剑阵满级(2.2 = 2.2),只缩一边会让「融合」凭空长出一截半径。
       { damage: 9, cooldown: 5.98, count: 2, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.0, orbitSpeed: 2.1, visualScale: 1.8 },
       { damage: 11, cooldown: 5.61, count: 2, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.0, orbitSpeed: 2.24, visualScale: 1.8 },
       { damage: 11, cooldown: 5.19, count: 3, pierce: 0, area: 1, speed: 0, lifeLaps: 2, orbitRadiusGrid: 1.05, orbitSpeed: 2.42, visualScale: 1.9, note: '飞剑增至 3 把' },
@@ -526,6 +555,21 @@ export const SPELLS: Record<string, SpellDef> = {
    * 剑气道数 = 当前飞剑数,所以仙剑每叠一级,斩罗的覆盖面就宽一道 ——
    * 剑数联动是这一条进化唯一的成长线,不另开数值。
    * 它补的正是剑阵的短板:远处炮台怪。
+   *
+   * ⚠️ **两半吃冷却的规则不一样,这是故意的**:
+   *
+   *    · **环绕**那一半**不吃**冷却乘区 —— `cooldown` 在那里只是「这批剑活
+   *      多久」,间隔被锁在下限 = 存活期。见上面 `jianzhen` 表头。
+   *    · **放射剑气**那一半**吃**冷却乘区:`nextBurstAt = time + everyMs × 乘区`,
+   *      于是天逆珠满级(×0.595)把它从 **4.0s 缩到 2.38s**。
+   *
+   * 产品口径一句话:**天逆珠该让斩罗决更凶,但不该让剑阵凭空多出一批剑。**
+   *
+   * ⚠️ 剑气的计时器必须在 `WeaponSystem.update()` 里**每帧自查**,不能留在
+   *    `fire()` 内。`fire()` 只有开火冷却到点才被调用,于是 4 秒的门槛会被
+   *    量化成「环绕周期的整数倍」—— 环绕周期被锁死在 1.9747s,实测第 3 个
+   *    周期才跨过门槛,配表写的 4.0s 实际是 **5.9241s**;而乘区 ×0.595 的
+   *    2380ms 落在同一张网格上会被抹平成 3949ms(收益只剩 33%,本应 40.5%)。
    */
   zhanluo: {
     id: 'zhanluo', name: '斩罗决',
@@ -548,7 +592,13 @@ export const SPELLS: Record<string, SpellDef> = {
       //    只打出 2 下,2.2 圈才稳定 3 下)。
       //    实测:8 × 50 × 3 下 ÷ 1.97s ≈ 608,加剑气 90 ≈ **698**,
       //    压过「剑阵8 + 仙剑5」的 473 —— 融合必须赢得看得见(约 +47%)。
-      { damage: 50, cooldown: 1.97, count: 8, pierce: 0, area: 1, speed: 0, lifeLaps: 2.2, orbitRadiusGrid: 2.2, orbitSpeed: 7.0, armorPen: 0, visualScale: 2.5 },
+      // ⚠️ `orbitRadiusGrid` 2.2 → **1.45**:与剑阵那张表同走一轮 ×2/3
+      //    (见上面 jianzhen 的注释)。两处必须**一起改** —— 进化的环绕半径
+      //    一直等于剑阵满级的半径(2.2 = 2.2),只缩一边会让融合在半径上
+      //    凭空长出一截,而收掉那一截正是这一轮的目的。
+      //    半径缩了但**转速没动**,于是线速度 141×7.0 ≈ 986 → 93×7.0 ≈ 651px/s,
+      //    穿隧余量反而变宽(见 Orbiter 的子步进注释)。
+      { damage: 50, cooldown: 1.97, count: 8, pierce: 0, area: 1, speed: 0, lifeLaps: 2.2, orbitRadiusGrid: 1.45, orbitSpeed: 7.0, armorPen: 0, visualScale: 2.5 },
     ],
     burst: {
       // 剑气放慢(9 → 7 格/s)并加宽加长:它是每 4 秒才有一次的招牌动作,
@@ -908,17 +958,22 @@ export function resolveSpell(id: string, level: number): ResolvedSpell | null {
   // 手填毫秒的话,「活几圈」和「多久能再打一次」就会各自漂,两个数对不上时
   // 不报错,只是默默地少打一次(实测踩过:life 1600ms vs 一圈 1599ms)。
   const lapMs = r.orbitSpeed ? (Math.PI * 2 / r.orbitSpeed) * 1000 : 0;
+  const lifeMs = r.lifeLaps ? r.lifeLaps * lapMs : (r.life ?? 0) * 1000;
 
   return {
     def, id, name: def.name, form: def.form, aim: def.aim ?? 'target',
     texture: def.texture, color: def.color, level: lv,
     damage: r.damage,
     cooldownMs: r.cooldown * 1000,
+    // 环绕形态「写死冷却 = 存活期」只是配表侧的一半,另一半在这里:
+    // 把存活期同时登记成间隔下限,冷区乘区就只能把间隔**拉长**,不能压破。
+    // 详见 `ResolvedSpell.cooldownFloorMs` 与 `jianzhen` 表头。
+    cooldownFloorMs: def.form === 'orbiter' ? lifeMs : 0,
     count: r.count,
     pierce: r.pierce,
     area: r.area,
     speed: r.speed * g,
-    lifeMs: r.lifeLaps ? r.lifeLaps * lapMs : (r.life ?? 0) * 1000,
+    lifeMs,
     rangePx: (r.rangeGrid ?? 0) * g,
     widthPx: (r.widthGrid ?? 0) * g,
     visualScale: r.visualScale ?? 1,

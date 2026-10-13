@@ -231,9 +231,31 @@ export class WeaponSystem {
     for (const s of this.spells) {
       const sp = resolveSpell(s.id, s.level);
       if (!sp) continue;
-      if (time - s.lastFiredAt < sp.cooldownMs * cdMul) continue;
-      this.fire(s, sp, time);
-      s.lastFiredAt = time;
+
+      // ① 环绕 / 直射本体。冷却乘区(天逆珠 ×0.95^l ÷ 定身术攻速)把间隔压短,
+      //    但**压不破 `cooldownFloorMs`**。环绕形态的这个下限是飞剑存活期,
+      //    压破了就是两批剑同场(输出源数量翻倍),而不是「多放几发弹」。
+      //    实测破口:满配乘区 ×0.595 会让斩罗决 1.97s → 1.17s、峰值 16 把剑。
+      const cd = Math.max(sp.cooldownMs * cdMul, sp.cooldownFloorMs);
+      if (time - s.lastFiredAt >= cd) {
+        this.fire(s, sp, time);
+        s.lastFiredAt = time;
+      }
+
+      // ② 斩罗:收束斩出的放射剑气。走**自己的计时器**,而且必须**每帧判** ——
+      //    这一段以前写在 `fire()` 里,于是被环绕的开火节奏**门控**掉了:
+      //    环绕周期被 floor 锁死在 1.9747s,4 秒的门槛永远只能落在它的整数倍上,
+      //    配表写的「每 4 秒」实测是 **5.9241s**(第 3 个周期才跨过门槛)。
+      //    而天逆珠要能缩短剑气间隔,就更不能挂在这个网格上:×0.595 之后是
+      //    2380ms,落在网格上会被抹平成 3949ms —— 收益只剩 33%,乘区本应给 40.5%。
+      //    顺序仍排在环绕开火**之后**:让这一拍刚生成的飞剑也一起收束,
+      //    读感才是「剑一亮 → 收束 → 斩出去」,而不是「斩了一半才生成剑」。
+      //    ⚠️ `everyMs * cdMul`:这是用户明确要的那一条 —— 天逆珠**可以**缩短
+      //    剑气,但**动不了环绕**(环绕那一半被 ① 的 floor 锁着)。
+      if (sp.def.burst && time >= s.nextBurstAt) {
+        this.fireBurst(sp, this.relicSystem.getSpellMods(sp.id), time);
+        s.nextBurstAt = time + sp.def.burst.everyMs * cdMul;
+      }
     }
   }
 
@@ -256,15 +278,16 @@ export class WeaponSystem {
       case 'drop': this.fireDrop(sp, mods); break;
       case 'wave': this.fireWave(sp, mods); break;
     }
-    // 斩罗:剑阵的进化形态每 4 秒收束一次。它有自己的节奏,不跟冷却走 ——
-    // 把 4 秒塞进冷却会让剑阵在前 4 秒完全不转,那是明显的退化。
-    if (sp.def.burst && time >= s.nextBurstAt) {
-      this.fireBurst(sp, mods, time);
-      s.nextBurstAt = time + sp.def.burst.everyMs;
-    }
+    // ⚠️ 斩罗的收束剑气**不在这里**了 —— 它已经搬去 `update()` 每帧自查。
+    //    留在这个函数里就会被「开火冷却」门控住:这个函数只有冷却到点才被调用,
+    //    于是 4 秒的门槛会被量化成环绕周期的整数倍(实测 5.9241s),而且
+    //    冷却乘区对它的收益也会被同一张网格抹掉一半。详见 `update()` 的 ②。
 
     // 天雷引走自己的计时器:它判定的是「场上有没有感电满层的目标」,
     // 与本门神通有没有开火无关 —— 玩家一开手就铺满感电,之后天雷自己会点名
+    // ⚠️ 但它**仍然挂在这个函数里**,所以同样受开火节奏门控(配表 2000ms,
+    //    实际要等下一次开火才跨过门槛 —— 五雷正法冷却 1.15s,量化后约 2.30s)。
+    //    与斩罗剑气是同一个耦合,只是误差小得多(约 +15%),本轮未动。
     if (sp.skyThunderMs > 0 && time >= s.nextSkyThunderAt) {
       s.nextSkyThunderAt = time + sp.skyThunderMs;
       this.fireSkyThunder(sp, mods);
