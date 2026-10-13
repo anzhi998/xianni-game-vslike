@@ -604,6 +604,30 @@ export class UIScene extends Phaser.Scene {
 
     c.add([bg, title, hint]);
 
+    // 属性一览:暂停时拉一次遗物合并结果。
+    // 为什么必须有这一行:全局暴击率**只**来自「气运」一件遗物(基础 0),
+    // 而它没有写进任何常驻 UI —— 玩家没装气运时,暴击就是字面意义的从不触发,
+    // 却无从分辨「系统坏了」和「我没这件遗物」。显示出来,两者一眼可分。
+    // showPauseOverlay 每次暂停都重建,这里读到的永远是当下值,不需要事件驱动。
+    const gameStats = this.scene.get('GameScene') as any;
+    if (gameStats?.relicSystem) {
+      const m = gameStats.relicSystem.getPlayerMods();
+      const statsLine = [
+        `暴击率 ${Math.round(m.critChance * 100)}%`,
+        `定身率 ${Math.round(m.freezeChance * 100)}%`,
+        `冷却 ×${gameStats.relicSystem.getCooldownMul().toFixed(2)}`,
+        `移速 ×${m.moveSpeedMul.toFixed(2)}`,
+        `拾取 +${Math.round((m.pickupMul - 1) * 100)}%`,
+      ].join('   ');
+      // ⚠️ 必须进容器 c:hidePauseOverlay 只销毁容器,散落在场景里的
+      // 文本不会跟着走 —— 暂停面板关掉了,属性行却永远留在 HUD 上
+      c.add(this.add.text(w / 2, h / 2 - 142, statsLine, {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: '#88ddff',
+      }).setOrigin(0.5));
+    }
+
     // 伤害飘字的颜色图例。
     //
     // 为什么必须写在这里:冷蓝那一档是「这一发被护甲削过」的唯一提示,游戏里
@@ -698,13 +722,8 @@ export class UIScene extends Phaser.Scene {
       { label: '开金匮', run: (g) => g.debugOpenChest() },
       { label: '填满遗物', run: (g) => g.debugGrantAllRelics() },
       { label: '下一只首领', run: (g) => g.debugNextBoss() },
-      { label: '凌天侯·剑域', run: (g) => g.debugLingtianhou() },
       { label: '首领血压到 20%', run: (g) => g.debugBossToPhase(0.2) },
       { label: '跳到 10:00', run: (g) => g.debugSetTime(600) },
-      { label: '喷一次火柱', run: (g) => g.debugFireHazard() },
-      { label: '落一根命数指', run: (g) => g.debugFingerOfFate() },
-      { label: '演示首领特效', run: (g) => g.debugBossFx() },
-      { label: '三种火对比', run: (g) => g.debugThreeFires() },
       { label: '弧带形态对比', run: (g) => g.debugArcShapes() },
       { label: '刷全部怪', run: (g) => g.debugSpawnAllMonsters() },
       { label: '刷精英', run: (g) => g.debugSpawnElite() },
