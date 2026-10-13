@@ -129,6 +129,11 @@ export interface DamageOptions {
    * 「不产生额外伤害」:抹除走静默击杀入口,不弹第二个伤害数字。
    */
   executeBelow?: number;
+  /**
+   * 伤害来源(神通 id),DPS 统计用。缺省计入「其他」。
+   * DoT 不靠它当场归账 —— 跳伤时 opts 早已不在,来源记在 Enemy.burnSource 上
+   */
+  sourceId?: string;
 }
 
 /**

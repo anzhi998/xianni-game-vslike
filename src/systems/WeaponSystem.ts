@@ -300,6 +300,7 @@ export class WeaponSystem {
       slow,
       shock: null,
       executeBelow: sp.executeBelow,
+      sourceId: sp.id,
     };
   }
 
@@ -580,7 +581,7 @@ export class WeaponSystem {
     if (!b) return;
     const count = b.count > 0 ? b.count : Math.max(1, sp.count + mods.orbAdd);
     const damage = b.damage * mods.damageMul * this.player.damageMul;
-    const status: DamageOptions = { armorPen: b.armorPen, burn: b.bleed, slow: null, shock: null };
+    const status: DamageOptions = { armorPen: b.armorPen, burn: b.bleed, slow: null, shock: null, sourceId: sp.id };
 
     // 「收束」:所有在飞的剑先向内缩一下再斩出去。
     // 少了这一下,斩罗在屏幕上就是「几颗青点飞走了」,和环绕的剑长得一样,

@@ -29,6 +29,7 @@ import { EvolutionSystem } from '../systems/EvolutionSystem';
 import { ChestSystem } from '../systems/ChestSystem';
 import { HazardSystem } from '../systems/HazardSystem';
 import { BossSystem } from '../systems/BossSystem';
+import { DamageMeter } from '../systems/DamageMeter';
 import { GAME_WIDTH, GAME_HEIGHT, CAMERA_ZOOM } from '../config/GameConfig';
 import { getMap, DEFAULT_MAP_ID, HAZARD_FALLBACK_COLOR } from '../config/MapConfig';
 import type { MapDef } from '../config/MapConfig';
@@ -92,6 +93,10 @@ export class GameScene extends Phaser.Scene {
   public chestSystem!: ChestSystem;
   public hazardSystem!: HazardSystem;
   public bossSystem!: BossSystem;
+  /** DPS 统计(调参工具)。唯一伤害入口 applyDamageToEnemy 每发都会 record */
+  public readonly damageMeter = new DamageMeter();
+  /** 调试面板「DPS 统计」开关。UIScene 每 0.5s 读它决定浮窗显隐 */
+  public dpsMeterOn = false;
 
   // 状态
   public isPaused = false;
@@ -688,7 +693,7 @@ export class GameScene extends Phaser.Scene {
       dmg *= mods.critMul;
     }
 
-    if (opts?.burn) enemy.applyBurn(opts.burn.dps, opts.burn.ms, now);
+    if (opts?.burn) enemy.applyBurn(opts.burn.dps, opts.burn.ms, now, opts.sourceId);
     if (opts?.slow && opts.slow.ms > 0) enemy.applySlow(opts.slow.mul, opts.slow.ms, now);
     if (opts?.shock) {
       const mods = this.relicSystem.getSpellMods(this.thunderSpellId());
@@ -706,6 +711,9 @@ export class GameScene extends Phaser.Scene {
       if (!wasFrozen) this.spawnFreezeChainFx(enemy, mods.freezeMs);
     }
 
+    // DPS 统计:记结算后的真实伤害(护甲/暴击/感电都已折完)。
+    // DoT 跳伤也走这里,来源靠 Enemy.burnSource 记下的施加者
+    this.damageMeter.record(opts?.sourceId ?? 'other', dmg, now);
     const killed = enemy.takeDamage(dmg, now);
     // 暴击的打击感:白闪拉长(普通 80ms → 暴击 160ms)+ 命中点星芒。
     // 放在 takeDamage 之后 —— 那里面刚把 flashUntil 设成普通档,这里压过去
@@ -2199,6 +2207,12 @@ export class GameScene extends Phaser.Scene {
       n++;
     }
     return n;
+  }
+
+  /** 切换右上角的 DPS 统计浮窗。读数是 UIScene 的事,这里只拨开关 */
+  public debugToggleDps(): string {
+    this.dpsMeterOn = !this.dpsMeterOn;
+    return this.dpsMeterOn ? 'DPS 统计:开' : 'DPS 统计:关';
   }
 
   /** 把当前首领的血量直接压到指定比例,用来快速验证阶段切换(剑域半径突变) */

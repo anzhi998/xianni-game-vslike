@@ -75,6 +75,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   public burnDps = 0;
   public burnUntil = 0;
   public burnAccum = 0;
+  /** 最强那层点燃/流血的施加者(神通 id)。DoT 跳伤时 opts 早已不在,归账只能靠它 */
+  public burnSource = '';
   /** 感电:层数与截止时刻。五雷正法的自我增伤循环靠它 */
   public shockStacks = 0;
   public shockUntil = 0;
@@ -267,6 +269,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.burnDps = 0;
     this.burnUntil = 0;
     this.burnAccum = 0;
+    this.burnSource = '';
     this.shockStacks = 0;
     this.shockUntil = 0;
     this.bossKey = cfg.boss ?? '';
@@ -390,8 +393,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.slowUntil = Math.max(this.slowUntil, now + ms);
   }
 
-  applyBurn(dps: number, ms: number, now: number): void {
-    if (this.burnDps < dps) this.burnDps = dps;
+  applyBurn(dps: number, ms: number, now: number, sourceId?: string): void {
+    // 来源跟着最强的那个 DoT 走:弱 DoT 只能续时长,不能把账记到自己头上
+    if (this.burnDps < dps) {
+      this.burnDps = dps;
+      this.burnSource = sourceId ?? '';
+    }
     this.burnUntil = Math.max(this.burnUntil, now + ms);
   }
 

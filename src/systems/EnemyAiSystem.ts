@@ -4,6 +4,7 @@ import type { Player } from '../entities/Player';
 import type { Pickup } from '../entities/Pickup';
 import { ENEMIES } from '../config/EnemyConfig';
 import type { Barrier } from '../entities/attacks/Barrier';
+import type { DamageOptions } from '../types';
 import { WORLD_WIDTH, WORLD_HEIGHT, viewRadius } from '../config/GameConfig';
 
 /**
@@ -55,7 +56,7 @@ export interface EnemyAiDeps {
   /** 爆炸特效(可选) */
   explodeFx?: (x: number, y: number, radius: number) => void;
   /** 对一只敌人结算伤害(点燃/流血的跳伤走这里,与其他伤害同一条链) */
-  damageEnemy: (enemy: Enemy, amount: number, x: number, y: number) => void;
+  damageEnemy: (enemy: Enemy, amount: number, x: number, y: number, opts?: DamageOptions) => void;
   /** 首领的一次行动。由本系统在 boss 分支到点时回调 —— 它不掌握速度 */
   bossAction: (enemy: Enemy) => void;
 }
@@ -172,7 +173,7 @@ export class EnemyAiSystem {
     while (e.burnAccum >= 1) {
       e.burnAccum -= 1;
       if (!e.active || e.isDead) return;
-      this.deps.damageEnemy(e, 1, e.x, e.y - 8);
+      this.deps.damageEnemy(e, 1, e.x, e.y - 8, { sourceId: e.burnSource || undefined });
     }
   }
 
