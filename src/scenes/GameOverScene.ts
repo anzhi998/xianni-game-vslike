@@ -117,10 +117,6 @@ export class GameOverScene extends Phaser.Scene {
     restart.on('pointerout', () => restart.setFillStyle(0x4a4a8a));
     restart.on('pointerdown', () => {
       this.scene.stop('UIScene');
-      // 必须显式 stop GameScene —— 死亡时它被 scene.pause() 暂停了,
-      // 直接 start 一个暂停场景,Phaser 可能只是 resume 而不走 SHUTDOWN,
-      // 旧 InputManager 的 window 监听器不销毁、create() 也不重新调,玩家就动不了
-      this.scene.stop('GameScene');
       this.scene.start('GameScene');
     });
 

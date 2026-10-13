@@ -2345,7 +2345,7 @@ export class GameScene extends Phaser.Scene {
 
     // HUD 必须在这里停掉,而不是等到结算页的按钮被点。
     //
-    // UIScene 是并行 launch 的独立场景,GameScene 自己 pause 不会带走它 —— 于是
+    // UIScene 是并行 launch 的独立场景,GameScene 自己 stop 不会带走它 —— 于是
     // 死亡画面上那个暂停按钮(右上角)还活着,点它会在结算面板上再叠一层暂停遮罩。
     // 手机上尤其明显:暂停键本来就小,玩家习惯性地往右上角一按就中招。
     this.scene.stop('UIScene');
@@ -2360,6 +2360,9 @@ export class GameScene extends Phaser.Scene {
       newRecordTime: isNewRecordTime,
       newRecordKills: isNewRecordKills,
     });
-    this.scene.pause();
+    // 用 stop 而不是 pause —— pause 后 GameOverScene 的 scene.start 可能只 resume
+    // 不走 SHUTDOWN,旧 InputManager 不销毁、create() 不重调,玩家就无法操作。
+    // stop 让 GameScene 彻底关停,再来一局时 scene.start 是全新启动
+    this.scene.stop();
   }
 }
