@@ -21,6 +21,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   public archetype: EnemyArchetype = 'horde';
   /** 抗性:天生(配置)与精英掷骰合并后的结果 */
   public resistPull = false;
+  /** 定身抗性。⚠️ 首领恒为 true(见 setup)—— 首领不吃定身术是一条全局规则 */
   public resistFreeze = false;
   /** 击退抗性。窥涅修士的「免疫击退」靠它成立 */
   public resistKnockback = false;
@@ -258,7 +259,17 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     // 抗性 = 天生(配置) ∪ 精英掷骰。用合并而不是覆盖:
     // 坦克的牵引抗性写在配置里,精英再叠一条也不会把它冲掉
     this.resistPull = !!(cfg.resist?.pull || m.resist?.pull);
-    this.resistFreeze = !!(cfg.resist?.freeze || m.resist?.freeze);
+    // ⚠️ **首领天生免疫定身**,不写进各条 Boss 的配置里,理由两条:
+    //   ① 「首领不吃定身」是一条全局规则,不是某只 Boss 的个性。写进配置意味着
+    //      以后每加一只 Boss 都得记得补一行,而漏掉的那只不会有任何报错 ——
+    //      它只是静默地能被锁住。
+    //   ② 与紧邻的 executeResist 同一种写法(首领免疫即死)。两处都是
+    //      「首领豁免」这一类规则的落点,摆在一起才看得见全貌。
+    // 为什么定身对首领特别致命:它的招式由 BossSystem 按自己的节拍驱动,
+    // 压根不看 frozenUntil —— 定身能停的只有它的**走位**。而「站桩一秒」恰好
+    // 是三只 Boss 最贵的一件事(剑域里每秒掉血、命数指按提前量锁落点),
+    // 40% 一发、攻速还随遗物等级涨的锁,会把走位题直接变成掷骰子。
+    this.resistFreeze = !!(cfg.resist?.freeze || m.resist?.freeze || cfg.boss);
     this.resistKnockback = !!(cfg.resist?.knockback || m.resist?.knockback);
     this.armor = cfg.armor ?? 0;
     // 即死抗性:首领免疫一切即死(它不该被一次清屏收掉),

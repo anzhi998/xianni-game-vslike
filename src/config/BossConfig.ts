@@ -1,3 +1,5 @@
+import { ENEMIES } from './EnemyConfig';
+
 /**
  * 首领表 —— 定时刷新,每只绑一个「改变走位习惯」的机制
  *
@@ -140,10 +142,21 @@ export interface BossFingerDef {
   color?: number;
 }
 
-/** 无敌闪现:瞬移到玩家附近一点,落地后短暂无敌 */
+/**
+ * 无敌闪现:瞬移到玩家附近一点,落地后短暂无敌。
+ *
+ * ⚠️ **`intervalMs` 和 `invulnMs` 是一对,必须一起看。** 玩家真正感知到的不是
+ * 间隔本身,而是 `invulnMs / (intervalMs / tempo)` 这个**无敌覆盖率**:
+ * 只缩间隔等于把 Boss 从「更活跃」改成「大部分时间打不动」—— 那是变难,不是变快。
+ * 当前三阶覆盖率:签动 **19.3%** / 逆天 **27.3%** / 无我 **55.7%**。
+ *
+ * 落地的无敌写在 `Enemy.invulnerableUntil` 上,与杀戮仙诀的白罩**共用字段但
+ * 不同表现**(一层冰蓝 vs 白罩+白化),规则也不同:罩子是「打本体没用」的长窗口,
+ * 闪现是「刚落地」的短瞬间。取 max 而不是赋值,因为两者可能重叠(见 BossSystem)。
+ */
 export interface BossBlinkDef {
   intervalMs: number;
-  /** 落地后的无敌时长(毫秒) */
+  /** 落地后的无敌时长(毫秒)。⚠️ 它同时是「闪现多烦」和「Boss 多难杀」两个旋钮 */
   invulnMs: number;
   /** 落点与玩家的距离区间(像素) */
   minDist: number;
@@ -439,6 +452,9 @@ export const BOSSES: Record<string, BossDef> = {
    * 血量 15000(写在 ENEMIES.tianyunzi):20:00 玩家单体 DPS 约 250–300,
    * 刨去闪现无敌的窗口,全程约 60 秒 —— 比朱雀长得多是刻意的:
    * 它的压力被分摊给了怪堆,本体该给的只是「打不中」的焦躁。
+   * ⚠️ 闪现调快之后(间隔 ×2/3、无敌小幅缩),无敌覆盖率是**升**的
+   *    (14.3/21.8/46.4% → **19.3/27.3/55.7%**),所以别指望这一仗变短 ——
+   *    买到的是「闪现更频繁」,不是「更好杀」:按 300 DPS 估,全程约 60s → **67s**。
    */
   tianyunzi: {
     id: 'tianyunzi', name: '天运子·分身',
@@ -457,7 +473,9 @@ export const BOSSES: Record<string, BossDef> = {
           leadPx: 90, color: TIANYUNZI_FINGER_COLOR,
         },
         fate: { count: 3, hpMul: 1.5, speedMul: 1.25, damageMul: 1.3, intervalMs: 6500 },
-        blink: { intervalMs: 7000, invulnMs: 1000, minDist: 300, maxDist: 460 },
+        // 闪现:间隔全表 ×2/3(用户口径「冷却太久」),无敌只小幅缩以保住
+        // 「落地那一下打不动」的读感。覆盖率 14.3% → 19.3%
+        blink: { intervalMs: 4667, invulnMs: 900, minDist: 300, maxDist: 460 },
         shield: { durationMs: 5000, intervalMs: 15000, radius: 84 },
       },
       {
@@ -469,7 +487,8 @@ export const BOSSES: Record<string, BossDef> = {
           leadPx: 110, spreadRad: 0.55, color: TIANYUNZI_FINGER_COLOR,
         },
         fate: { count: 5, hpMul: 1.5, speedMul: 1.25, damageMul: 1.3, intervalMs: 5500 },
-        blink: { intervalMs: 5500, invulnMs: 1200, minDist: 280, maxDist: 440 },
+        // 5.50s → 3.67s;无敌 1200 → 1000ms,覆盖率 21.8% → 27.3%
+        blink: { intervalMs: 3667, invulnMs: 1000, minDist: 280, maxDist: 440 },
         shield: { durationMs: 5000, intervalMs: 15000, radius: 88 },
       },
       {
@@ -481,7 +500,10 @@ export const BOSSES: Record<string, BossDef> = {
           leadPx: 130, spreadRad: 0.85, color: TIANYUNZI_FINGER_COLOR,
         },
         fate: { count: 7, hpMul: 1.6, speedMul: 1.3, damageMul: 1.35, intervalMs: 4500 },
-        blink: { intervalMs: 4200, invulnMs: 1500, minDist: 260, maxDist: 420 },
+        // 4.20s → 2.80s(终阶 tempo 1.3,故实际 3.23s → 2.15s);无敌 1500 → 1200ms。
+        // ⚠️ 终阶是全场唯一覆盖率**过半**的窗口(46.4% → 55.7%)—— 已经贴着
+        //    「站桩输出被周期性打断」的设计上限了,以后要再提频,该动无敌而不是间隔
+        blink: { intervalMs: 2800, invulnMs: 1200, minDist: 260, maxDist: 420 },
         shield: { durationMs: 5000, intervalMs: 15000, radius: 92 },
       },
     ],
@@ -558,6 +580,13 @@ export function validateBossSchedule(): string[] {
     if (seen.has(b.atSeconds)) bad.push(`首领时刻冲突:${b.name} 与另一只同为 ${b.atSeconds}s`);
     seen.add(b.atSeconds);
     if (b.phases.length === 0) bad.push(`${b.name} 没有任何阶段`);
+    // 「首领豁免」类规则(免疫即死 / 免疫定身)在 Enemy.setup 里读的是
+    // ENEMIES[id].boss,而这张表是按 key 组织的 —— 两边一旦对不上,
+    // 那只 Boss 会**静默地**退化成一只「能被定身锁住、能被清屏收掉」的普通怪:
+    // 没有报错、没有警告,只有对局里的手感不对。
+    if (ENEMIES[b.id]?.boss !== b.id) {
+      bad.push(`${b.name} 的 ENEMIES.${b.id}.boss 与首领表键名不一致 —— 首领豁免(定身/即死)会静默失效`);
+    }
     if (b.rebirthAtHp !== undefined && (b.rebirthPhase === undefined || b.rebirthPhase >= b.phases.length)) {
       bad.push(`${b.name} 的重生阶段下标越界`);
     }
