@@ -9,6 +9,8 @@ export class UpgradeScene extends Phaser.Scene {
   private title = '';
   private subtitle = '';
   private onSelect?: (u: Upgrade) => void;
+  /** 二级流程(替换面板)的放弃出口;不传就不画放弃按钮 */
+  private onCancel?: () => void;
   private cards: Upgrade[] = [];
 
   constructor() {
@@ -30,6 +32,7 @@ export class UpgradeScene extends Phaser.Scene {
           : `选择一项精进 (Lv ${this.level})`);
     this.cards = data.cards ?? [];
     this.onSelect = data.onSelect;
+    this.onCancel = data.onCancel;
   }
 
   create(): void {
@@ -72,6 +75,31 @@ export class UpgradeScene extends Phaser.Scene {
       const cx = startX + i * (cardW + gap);
       this.createUpgradeCard(cx, cy, cardW, 320, up);
     });
+
+    // 放弃按钮:右上角。替换面板等二级流程才有(onCancel 传入才画) ——
+    // 主三选一没有放弃,那会让「攒修为升级」变成可以白嫖跳过的选项
+    if (this.onCancel) {
+      const btn = this.add.container(w - 74, 44);
+      const bg = this.add.rectangle(0, 0, 96, 40, 0x332222, 0.9)
+        .setStrokeStyle(2, 0xcc6666)
+        .setInteractive({ useHandCursor: true });
+      const label = this.add.text(0, 0, '放弃', {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#dd8888',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      bg.on('pointerover', () => {
+        bg.setFillStyle(0x552a2a, 0.95);
+        label.setColor('#ffbbbb');
+      });
+      bg.on('pointerout', () => {
+        bg.setFillStyle(0x332222, 0.9);
+        label.setColor('#dd8888');
+      });
+      bg.on('pointerdown', () => this.onCancel!());
+      btn.add([bg, label]);
+    }
   }
 
   private createUpgradeCard(cx: number, cy: number, w: number, h: number, upgrade: Upgrade): void {

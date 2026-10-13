@@ -35,7 +35,7 @@ import type { MapDef } from '../config/MapConfig';
 import { SPELLS, BASE_SPELL_IDS, STARTING_SPELL, MAX_SPELL_SLOTS, resolveSpell,
   validateSpellReachability, validateEvolutionLinks, validateSpellKeys } from '../config/SpellConfig';
 import { RELICS, RELIC_IDS, POOL_RELIC_IDS, RELIC_SLOTS, validateRelicReachability } from '../config/RelicConfig';
-import { BOSSES, METEOR_COLOR, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
+import { BOSSES, SWORD_DOMAIN_TEXTURE_RADIUS } from '../config/BossConfig';
 import { validateBossSchedule } from '../config/BossConfig';
 import { EVOLUTIONS, findEvolution } from '../config/EvolutionConfig';
 import { HEAL_PILL_FRACTION, XP_PILL_FRACTION } from '../config/EliteConfig';
@@ -519,7 +519,7 @@ export class GameScene extends Phaser.Scene {
       p.maxHealth = maxHp;
       p.health = Phaser.Math.Clamp(p.health + Math.max(0, delta), 1, maxHp);
     }
-    p.moveSpeedMul = this.realmSystem.speedMul * mods.moveSpeedMul;
+    p.moveSpeedMul = mods.moveSpeedMul;
     p.pickupMul = mods.pickupMul;
     p.healthRegen = mods.healthRegen;
   }
@@ -1028,7 +1028,7 @@ export class GameScene extends Phaser.Scene {
     if (brokeThrough) this.syncPlayerStats();
 
     this.events.emit(GameEvents.PLAYER_LEVEL_UP, this.xpSystem.level);
-    this.weaponSystem.resetCooldowns();
+    // 普通升级不重置冷却;冷却重置是大境界突破的奖励,在 RealmSystem.applyLevelUp 里
     this.showInsightPanel();
   }
 
@@ -1064,8 +1064,9 @@ export class GameScene extends Phaser.Scene {
    * 卡的 apply 直接做 replace(oldId → 新遗物),沿用 applyUpgrade 的统一出口,
    * 保证 stats 重算与 UPGRADE_APPLIED 事件一次不漏。
    *
-   * 换完没有「反悔退出」:三选一选了替换卡就必须换一件 —— 退出按钮会把
-   * 「这次悟道」变成既没拿到也没花掉,队列状态说不清,不如不做。
+   * 右上角「放弃」:退出替换流程、**本次悟道作废**(新遗物不要了,旧遗物原样保留)。
+   * 悟道已经弹出并被选择过,放弃就是玩家对这张替换卡说「不」 —— 它没有回退到
+   * 三选一的说法,也没有补偿;队列照常往下走(宝箱开的余下次数不受影响)。
    */
   private showReplacePanel(pending: Upgrade): void {
     const cards: Upgrade[] = this.relicSystem.getEquipped().map((r) => ({
@@ -1086,6 +1087,11 @@ export class GameScene extends Phaser.Scene {
       cards,
       onSelect: (chosen: Upgrade) => {
         this.applyUpgrade(chosen);
+        this.scene.stop('UpgradeScene');
+        this.resumeGame();
+        this.processPendingLevelUps();
+      },
+      onCancel: () => {
         this.scene.stop('UpgradeScene');
         this.resumeGame();
         this.processPendingLevelUps();
@@ -2100,81 +2106,6 @@ export class GameScene extends Phaser.Scene {
     return this.bossSystem.forceSpawn(id);
   }
 
-  public debugFireHazard(): string {
-    const n = this.hazardSystem.forceBurst();
-    return n ? `灵脉地热喷发 ${n} 处` : '本图没有环境机制';
-  }
-
-  /** 手动落一根命数指。落点就是玩家脚下稍微提前一点 —— 调试时要看得见 */
-  public debugFingerOfFate(): string {
-    const b = this.player.body as Phaser.Physics.Arcade.Body;
-    const speed = Math.hypot(b.velocity.x, b.velocity.y);
-    const lead = 90;
-    const x = this.player.x + (speed > 1 ? (b.velocity.x / speed) * lead : 0);
-    const y = this.player.y + (speed > 1 ? (b.velocity.y / speed) * lead : 0);
-    this.spawnFinger(x, y, 100, 1600, 32, 0xd8b860);
-    return '命数指落下';
-  }
-
-  /**
-   * 一次性铺开全部首领特效,用来一眼校验配色与体量。
-   *
-   * 特效是「看一眼才知道对不对」的东西 —— 逐个去等 15/20 分钟的 Boss 刷新
-   * 才能看到它们,调试成本远高于它们本身的价值。所以这里绕开 Boss 时间表
-   * 直接把它们按位置摊开:出手阵、落点环、斩痕、符框、光柱、印记、碎屑,
-   * 一口气全放,确认色系不打架、互相不糊在一起。
-   */
-  public debugBossFx(): string {
-    const cx = this.player.x;
-    const cy = this.player.y;
-    // 出手阵:两个 Boss 的色系各放一次,确认旋转看得见
-    this.spawnBossCastFx(cx - 170, cy - 90, 0x9db4d0);
-    this.spawnBossCastFx(cx + 170, cy - 90, 0x44ccbb);
-    // 落点环:青灰(凌天侯)与金(天运子)
-    this.spawnSlamRing(cx - 170, cy + 20, 110, 0x9db4d0);
-    this.spawnSlamRing(cx + 170, cy + 20, 110, 0xd8b860);
-    // 斩痕:四个方向
-    for (let i = 0; i < 4; i++) {
-      this.spawnSwordSlashFx(cx + Math.cos((i / 4) * Math.PI * 2) * 90,
-        cy + Math.sin((i / 4) * Math.PI * 2) * 90,
-        (i / 4) * 360, 0x9db4d0);
-    }
-    // 命数指的预言(符框 + 光柱)与实际落下
-    this.spawnFinger(cx, cy, 100, 1600, 32, 0xd8b860);
-    // 印记与碎屑
-    this.spawnFateMarkFx(cx - 60, cy + 80);
-    this.spawnFateMarkFx(cx + 60, cy + 80);
-    this.spawnFateAshesFx(cx, cy + 90, 90);
-    // 登场特效(三重符文 + 大环)
-    this.spawnBossEntranceFx(cx, cy - 140, 0xff8822);
-    return '首领特效全放一遍';
-  }
-
-  /**
-   * 三种「火」并排铺开,一眼校验色相是否真的分得开。
-   *
-   * 这是本次改动**唯一**的验收方式 —— 「玩家火海 / 地图地火 / 朱雀火雨」
-   * 三者的差别全在色相与形态上,而这两样都必须**同屏对比**才看得出来:
-   * 单看陨石觉得紫红很清楚,把地火摆在旁边才发现它们原本是同一个橙。
-   */
-  public debugThreeFires(): string {
-    const cx = this.player.x;
-    const cy = this.player.y;
-    // 左:地图地火(橙黄,地面柱状持续喷发)
-    this.spawnFireVent(cx - 230, cy, 90, 400, 4000, 14);
-    // 中:朱雀火雨(紫红,天上斜坠陨石,单次爆发)
-    this.spawnMeteor(cx, cy, 92, 1200, 24, METEOR_COLOR);
-    // 右:玩家火海(深血红,地面燃烧区)。火海是 Zone,只能由术法放 ——
-    //      这里用精灵色块示意它在地面上「摊开」的形态
-    const sea = this.add.image(cx + 230, cy, 'fx_fire_sea');
-    sea.setTint(0xff3311);
-    sea.setBlendMode(Phaser.BlendModes.ADD);
-    sea.setAlpha(0.75);
-    sea.setDepth(40);
-    this.time.delayedCall(3000, () => sea.destroy());
-    return '三种火并排:地火(橙黄) / 火雨(紫红) / 火海(深血红)';
-  }
-
   /**
    * 弧带形态一览:把「单道窄弧 / 3 道分开的弧弹 / 呼风的全周一圈」并排摆开。
    *
@@ -2222,21 +2153,6 @@ export class GameScene extends Phaser.Scene {
       n++;
     }
     return n;
-  }
-
-  /**
-   * 一分钟内速通凌天侯的三个阶段 —— 剑域半径与弟子数量都要看得见地变。
-   *
-   * 剑域的正确性只能靠**走进去**验证:站在域外看,它只是一圈发光的线,
-   * 和装饰地砖没有区别。所以这个调试入口会把首领扔在玩家旁边,
-   * 让玩家直接站进域里感受 tick 掉血,同时把三阶的半径依次撑开对比。
-   */
-  public debugLingtianhou(): string {
-    const e = this.spawnBoss('lingtianhou');
-    if (!e) return '敌人池已满';
-    // 贴到玩家身边 —— 剑域是「跟人走的场地」,离太远就完全看不到效果
-    e.setPosition(this.player.x + 160, this.player.y - 60);
-    return '凌天侯登场(剑域已开,站进去会持续掉血)';
   }
 
   /** 把当前首领的血量直接压到指定比例,用来快速验证阶段切换(剑域半径突变) */
